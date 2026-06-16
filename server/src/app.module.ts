@@ -12,6 +12,10 @@ import { CommonModule } from './common/common.module';
 import { AuditModule } from './audit/audit.module';
 import { StoreModule } from './store/store.module';
 import { UploadModule } from './upload/upload.module';
+import { CartModule } from './cart/cart.module';
+import { UserModule } from './user/user.module';
+import { OrderModule } from './order/order.module';
+import { PaymentModule } from './payment/payment.module';
 import { AppScheduleModule } from './schedule/schedule.module';
 import { TenantMiddleware } from './common/tenant/tenant.middleware';
 import { TenantGuard } from './common/guards/tenant.guard';
@@ -33,6 +37,10 @@ import { AuditInterceptor } from './audit/audit.interceptor';
     AppScheduleModule,
     StoreModule,
     UploadModule,
+    CartModule,
+    UserModule,
+    OrderModule,
+    PaymentModule,
     RedisModule.forRoot(),
   ],
   providers: [
