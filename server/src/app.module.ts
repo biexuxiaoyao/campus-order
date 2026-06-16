@@ -16,7 +16,17 @@ import { CartModule } from './cart/cart.module';
 import { UserModule } from './user/user.module';
 import { OrderModule } from './order/order.module';
 import { PaymentModule } from './payment/payment.module';
+import { PrepaidModule } from './prepaid/prepaid.module';
+import { DiscountModule } from './discount/discount.module';
+import { PointsModule } from './points/points.module';
+import { CouponModule } from './coupon/coupon.module';
+import { NotifyModule } from './notify/notify.module';
+import { PrinterModule } from './printer/printer.module';
+import { GroupOrderModule } from './group-order/group-order.module';
 import { AppScheduleModule } from './schedule/schedule.module';
+import { SettingsModule } from './settings/settings.module';
+import { StaffModule } from './staff/staff.module';
+import { AdminModule } from './admin/admin.module';
 import { TenantMiddleware } from './common/tenant/tenant.middleware';
 import { TenantGuard } from './common/guards/tenant.guard';
 import { AllExceptionFilter } from './common/filters/all-exception.filter';
@@ -41,6 +51,16 @@ import { AuditInterceptor } from './audit/audit.interceptor';
     UserModule,
     OrderModule,
     PaymentModule,
+    PrepaidModule,
+    DiscountModule,
+    PointsModule,
+    CouponModule,
+    NotifyModule,
+    PrinterModule,
+    GroupOrderModule,
+    SettingsModule,
+    StaffModule,
+    AdminModule,
     RedisModule.forRoot(),
   ],
   providers: [
