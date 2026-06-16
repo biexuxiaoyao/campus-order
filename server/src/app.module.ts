@@ -4,9 +4,14 @@ import { APP_GUARD, APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
 import { BrandModule } from './brand/brand.module';
+import { CategoryModule } from './category/category.module';
+import { DishModule } from './dish/dish.module';
+import { SkuModule } from './sku/sku.module';
 import { RedisModule } from './redis/redis.module';
 import { CommonModule } from './common/common.module';
 import { AuditModule } from './audit/audit.module';
+import { StoreModule } from './store/store.module';
+import { UploadModule } from './upload/upload.module';
 import { AppScheduleModule } from './schedule/schedule.module';
 import { TenantMiddleware } from './common/tenant/tenant.middleware';
 import { TenantGuard } from './common/guards/tenant.guard';
@@ -21,8 +26,13 @@ import { AuditInterceptor } from './audit/audit.interceptor';
     CommonModule,
     AuthModule,
     BrandModule,
+    CategoryModule,
+    DishModule,
+    SkuModule,
     AuditModule,
     AppScheduleModule,
+    StoreModule,
+    UploadModule,
     RedisModule.forRoot(),
   ],
   providers: [

@@ -2,11 +2,18 @@ import { config } from 'dotenv';
 config(); // 确保 .env 在 PrismaClient 初始化前加载
 
 import { NestFactory } from '@nestjs/core';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { ValidationPipe } from '@nestjs/common';
+import { join } from 'path';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+
+  // 上传文件静态资源访问
+  app.useStaticAssets(join(__dirname, '..', 'uploads'), {
+    prefix: '/uploads/',
+  });
 
   // 全局校验管道
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
