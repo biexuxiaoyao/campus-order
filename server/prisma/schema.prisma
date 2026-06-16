@@ -1,0 +1,555 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+// ========== 多租户 ==========
+
+model Tenant {
+  id          String   @id @default(uuid())
+  appId       String   @unique
+  name        String
+  status      String   @default("active") // active, expired, deleted
+  expireAt    DateTime?
+  licenseKey  String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  brandConfig    BrandConfig?
+  modules        TenantModule[]
+  stores         Store[]
+  users          User[]
+  adminUsers     AdminUser[]
+  companies      Company[]
+  sourceDeliveries SourceDelivery[]
+}
+
+model BrandConfig {
+  id        String   @id @default(uuid())
+  tenantId  String   @unique
+  config    Json
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+}
+
+// ========== 模块系统 ==========
+
+model Module {
+  id              String @id // group-meal, prepaid, points...
+  name            String
+  version         String
+  priceMonthly    Int?
+  priceYearly     Int?
+  priceSourceCode Int?
+
+  tenantModules TenantModule[]
+}
+
+model TenantModule {
+  id         String   @id @default(uuid())
+  tenantId   String
+  moduleId   String
+  status     String   @default("active") // active, expired
+  expireAt   DateTime?
+  createdAt  DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  module Module @relation(fields: [moduleId], references: [id])
+
+  @@unique([tenantId, moduleId])
+}
+
+// ========== 门店 ==========
+
+model Store {
+  id        String   @id @default(uuid())
+  tenantId  String
+  name      String
+  address   String?
+  phone     String?
+  status    String   @default("active")
+
+  categories     Category[]
+  dishes         Dish[]
+  specTemplates  SpecTemplate[]
+  orders         Order[]
+  discountRules  DiscountRule[]
+  couponTemplates CouponTemplate[]
+  printers       Printer[]
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+}
+
+// ========== 用户与公司 ==========
+
+model User {
+  id        String   @id @default(uuid())
+  tenantId  String
+  openid    String
+  nickname  String?
+  avatar    String?
+  phone     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant           Tenant          @relation(fields: [tenantId], references: [id])
+  companyMembers   CompanyMember[]
+  orders           Order[]
+  groupOrderItems  GroupOrderItem[]
+  groupOrdersLed   GroupOrder[]
+  cartItems        CartItem[]
+  prepaidAccounts  PrepaidAccount[]
+  pointsAccount    PointsAccount?
+  userCoupons      UserCoupon[]
+  signInRecords    SignInRecord[]
+  notificationPref NotificationPreference?
+
+  @@unique([tenantId, openid])
+}
+
+model AdminUser {
+  id           String   @id @default(uuid())
+  tenantId     String
+  username     String
+  passwordHash String
+  role         String   // owner, manager, cashier, chef
+  storeId      String?
+  status       String   @default("active")
+  lockedUntil  DateTime?
+  loginAttempts Int     @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, username])
+}
+
+model Company {
+  id         String   @id @default(uuid())
+  tenantId   String
+  name       String
+  buildingId String?
+  address    String?
+  adminUserId String?
+  createdAt  DateTime @default(now())
+
+  tenant  Tenant           @relation(fields: [tenantId], references: [id])
+  members CompanyMember[]
+}
+
+model CompanyMember {
+  id        String   @id @default(uuid())
+  companyId String
+  userId    String
+  role      String   @default("member")
+  createdAt DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id])
+  user    User    @relation(fields: [userId], references: [id])
+
+  @@unique([companyId, userId])
+}
+
+model Building {
+  id      String @id @default(uuid())
+  name    String
+  address String?
+}
+
+// ========== 菜品 ==========
+
+model Category {
+  id        String   @id @default(uuid())
+  storeId   String
+  name      String
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  store  Store  @relation(fields: [storeId], references: [id])
+  dishes Dish[]
+}
+
+model Dish {
+  id                  String    @id @default(uuid())
+  storeId             String
+  categoryId          String
+  name                String
+  imageUrl            String?
+  unit                String    @default("份")
+  status              String    @default("draft") // draft, published, offline
+  estimatedToday      Boolean   @default(false)
+  scheduledPublishAt  DateTime?
+  scheduledUnpublishAt DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  store    Store    @relation(fields: [storeId], references: [id])
+  category Category @relation(fields: [categoryId], references: [id])
+  skus     Sku[]
+  images   DishImage[]
+  related  RelatedDish[]  @relation("DishToRelated")
+  relatedBy RelatedDish[] @relation("RelatedToDish")
+}
+
+model DishImage {
+  id       String @id @default(uuid())
+  dishId   String
+  url      String
+  sortOrder Int   @default(0)
+
+  dish Dish @relation(fields: [dishId], references: [id])
+}
+
+model RelatedDish {
+  id         String @id @default(uuid())
+  dishId     String
+  relatedId  String
+
+  dish    Dish @relation("DishToRelated", fields: [dishId], references: [id])
+  related Dish @relation("RelatedToDish", fields: [relatedId], references: [id])
+
+  @@unique([dishId, relatedId])
+}
+
+model Sku {
+  id             String @id @default(uuid())
+  dishId         String
+  specs          Json
+  price          Int    // 单位: 分
+  stock          Int    @default(0)
+  availableStock Int    @default(0)
+  status         String @default("active")
+  version        Int    @default(0) // 乐观锁
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  dish Dish @relation(fields: [dishId], references: [id])
+}
+
+model SpecTemplate {
+  id      String @id @default(uuid())
+  storeId String
+  name    String
+  options Json
+  createdAt DateTime @default(now())
+
+  store Store @relation(fields: [storeId], references: [id])
+}
+
+// ========== 购物车 ==========
+
+model CartItem {
+  id        String   @id @default(uuid())
+  userId    String
+  tenantId  String
+  skuId     String
+  quantity  Int
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([expiresAt])
+}
+
+// ========== 订单 ==========
+
+model Order {
+  id            String   @id @default(uuid())
+  orderNo       String   @unique
+  tenantId      String
+  userId        String
+  storeId       String
+  type          String   // individual, group_represent, group_pool
+  status        String   @default("pending")
+  totalAmount   Int      // 单位: 分
+  pickupNo      String?
+  pickupTime    DateTime?
+  remark        String?
+  tags          Json?
+  paymentMethod String?
+  version       Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user       User        @relation(fields: [userId], references: [id])
+  store      Store       @relation(fields: [storeId], references: [id])
+  items      OrderItem[]
+  timeline   OrderTimeline[]
+  payments   PaymentRecord[]
+  refunds    RefundRecord[]
+
+  @@index([userId, status, createdAt])
+  @@index([storeId, status, createdAt])
+}
+
+model OrderItem {
+  id          String @id @default(uuid())
+  orderId     String
+  skuId       String
+  dishName    String
+  specName    String
+  price       Int
+  quantity    Int
+  imageBase64 String? @db.Text
+
+  order Order @relation(fields: [orderId], references: [id])
+}
+
+model OrderTimeline {
+  id        String   @id @default(uuid())
+  orderId   String
+  status    String
+  timestamp DateTime @default(now())
+
+  order Order @relation(fields: [orderId], references: [id])
+}
+
+model PaymentRecord {
+  id            String   @id @default(uuid())
+  orderId       String
+  transactionId String?
+  amount        Int
+  channel       String   // wechat, balance
+  status        String   // pending, success, failed
+  createdAt     DateTime @default(now())
+
+  order Order @relation(fields: [orderId], references: [id])
+}
+
+model RefundRecord {
+  id          String   @id @default(uuid())
+  orderId     String
+  paymentId   String?
+  amount      Int
+  reason      String?
+  status      String   // pending, approved, rejected, completed
+  approvedBy  String?
+  rejectedReason String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  order Order @relation(fields: [orderId], references: [id])
+}
+
+// ========== 团单 ==========
+
+model GroupOrder {
+  id        String   @id @default(uuid())
+  groupNo   String   @unique
+  tenantId  String
+  storeId   String
+  leaderId  String
+  mode      String   // pool, represent
+  status    String   @default("pooling")
+  deadline  DateTime?
+  minAmount Int?
+  condition String   @default("A") // A or B
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  leader User             @relation(fields: [leaderId], references: [id])
+  items  GroupOrderItem[]
+
+  @@index([status, deadline])
+}
+
+model GroupOrderItem {
+  id            String   @id @default(uuid())
+  groupOrderId  String
+  userId        String
+  orderId       String?
+  skuId         String
+  dishName      String
+  specName      String
+  price         Int
+  quantity      Int
+  recipientName String?
+  createdAt     DateTime @default(now())
+
+  groupOrder GroupOrder @relation(fields: [groupOrderId], references: [id])
+  user       User       @relation(fields: [userId], references: [id])
+
+  @@unique([groupOrderId, userId, skuId])
+}
+
+// ========== 预充值 ==========
+
+model PrepaidAccount {
+  id            String @id @default(uuid())
+  userId        String
+  tenantId      String
+  type          String // personal, company
+  balance       Int    @default(0)
+  frozenBalance Int    @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user         User                  @relation(fields: [userId], references: [id])
+  transactions PrepaidTransaction[]
+
+  @@unique([userId, type])
+}
+
+model PrepaidTransaction {
+  id           String   @id @default(uuid())
+  accountId    String
+  type         String   // purchase, consume, refund
+  amount       Int
+  balanceAfter Int
+  channel      String?
+  createdAt    DateTime @default(now())
+
+  account PrepaidAccount @relation(fields: [accountId], references: [id])
+}
+
+// ========== 折扣/积分/优惠券 ==========
+
+model DiscountRule {
+  id          String   @id @default(uuid())
+  storeId     String
+  name        String
+  conditions  Json
+  actions     Json
+  priority    Int      @default(0)
+  isStackable Boolean  @default(false)
+  startAt     DateTime?
+  endAt       DateTime?
+  status      String   @default("active")
+  createdAt   DateTime @default(now())
+
+  store Store @relation(fields: [storeId], references: [id])
+}
+
+model PointsAccount {
+  id          String @id @default(uuid())
+  userId      String @unique
+  tenantId    String
+  balance     Int    @default(0)
+  totalEarned Int    @default(0)
+  updatedAt   DateTime @updatedAt
+
+  user         User                @relation(fields: [userId], references: [id])
+  transactions PointsTransaction[]
+
+  @@unique([userId, tenantId])
+}
+
+model PointsTransaction {
+  id        String   @id @default(uuid())
+  accountId String
+  type      String   // earn, consume, expire
+  points    Int
+  expiresAt DateTime?
+  ruleId    String?
+  createdAt DateTime @default(now())
+
+  account PointsAccount @relation(fields: [accountId], references: [id])
+
+  @@index([expiresAt])
+}
+
+model CouponTemplate {
+  id        String   @id @default(uuid())
+  storeId   String
+  name      String
+  type      String   // full_reduction, discount, product
+  threshold Int?
+  value     Int
+  maxValue  Int?
+  totalQty  Int
+  usedQty   Int      @default(0)
+  validDays Int?
+  startAt   DateTime?
+  endAt     DateTime?
+  status    String   @default("active")
+  createdAt DateTime @default(now())
+
+  store       Store        @relation(fields: [storeId], references: [id])
+  userCoupons UserCoupon[]
+}
+
+model UserCoupon {
+  id         String   @id @default(uuid())
+  userId     String
+  templateId String
+  status     String   @default("available") // available, used, expired
+  usedAt     DateTime?
+  createdAt  DateTime @default(now())
+
+  user     User           @relation(fields: [userId], references: [id])
+  template CouponTemplate @relation(fields: [templateId], references: [id])
+}
+
+// ========== 其他 ==========
+
+model Printer {
+  id       String @id @default(uuid())
+  storeId  String
+  brand    String
+  deviceId String
+  apiKey   String
+  status   String @default("active")
+  createdAt DateTime @default(now())
+
+  store Store @relation(fields: [storeId], references: [id])
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  tenantId   String
+  operatorId String
+  action     String
+  targetType String
+  targetId   String?
+  detail     Json?
+  ip         String?
+  createdAt  DateTime @default(now())
+}
+
+model SourceDelivery {
+  id          String   @id @default(uuid())
+  tenantId    String
+  version     String
+  modules     Json
+  watermarkId String
+  checksum    String?
+  deliveredAt DateTime?
+  expiresAt   DateTime?
+  createdAt   DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+}
+
+model SignInRecord {
+  id              String   @id @default(uuid())
+  userId          String
+  tenantId        String
+  signDate        DateTime
+  consecutiveDays Int      @default(1)
+  createdAt       DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([userId, signDate])
+}
+
+model NotificationPreference {
+  id        String @id @default(uuid())
+  userId    String @unique
+  tenantId  String
+  prefs     Json
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([userId, tenantId])
+}
