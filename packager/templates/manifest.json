@@ -1,0 +1,12 @@
+{
+  "version": "1.0.0",
+  "tenantId": "tenant-uuid-here",
+  "watermarkId": "watermark-uuid-here",
+  "targetDir": "../server",
+  "outputDir": "../delivery/server",
+  "modules": [
+    { "id": "base", "name": "基础模块", "purchased": true },
+    { "id": "group-meal", "name": "团体订餐", "purchased": true },
+    { "id": "prepaid", "name": "预充值", "purchased": false }
+  ]
+}

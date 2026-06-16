@@ -1,0 +1,30 @@
+import http from './index'
+
+export interface LoginParams {
+  username: string
+  password: string
+}
+
+export interface LoginResult {
+  token: string
+  user: UserInfo
+}
+
+export interface UserInfo {
+  id: number
+  username: string
+  role: string
+  avatar?: string
+}
+
+export function login(params: LoginParams): Promise<LoginResult> {
+  return http.post('/auth/login', params)
+}
+
+export function getUserInfo(): Promise<UserInfo> {
+  return http.get('/auth/userinfo')
+}
+
+export function logout(): Promise<void> {
+  return http.post('/auth/logout')
+}

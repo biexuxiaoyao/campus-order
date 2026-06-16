@@ -1,0 +1,126 @@
+/* uni.scss — 全局样式变量 */
+/* 主题色 */
+$primary-color: #07C160;
+$primary-light: #E8F8EF;
+$primary-dark: #06AD56;
+
+/* 功能色 */
+$success-color: #07C160;
+$warning-color: #FF9800;
+$danger-color: #F44336;
+$info-color: #909399;
+
+/* 文字色 */
+$text-primary: #333333;
+$text-regular: #666666;
+$text-secondary: #999999;
+$text-placeholder: #C0C4CC;
+$text-white: #FFFFFF;
+
+/* 边框色 */
+$border-color: #E5E5E5;
+$border-light: #F0F0F0;
+
+/* 背景色 */
+$bg-primary: #FFFFFF;
+$bg-page: #F5F5F5;
+$bg-dark: #F0F0F0;
+
+/* 尺寸 */
+$font-size-xs: 20rpx;
+$font-size-sm: 24rpx;
+$font-size-base: 28rpx;
+$font-size-lg: 32rpx;
+$font-size-xl: 36rpx;
+$font-size-xxl: 40rpx;
+
+/* 间距 */
+$spacing-xs: 8rpx;
+$spacing-sm: 16rpx;
+$spacing-base: 24rpx;
+$spacing-lg: 32rpx;
+$spacing-xl: 48rpx;
+
+/* 圆角 */
+$radius-sm: 8rpx;
+$radius-base: 12rpx;
+$radius-lg: 16rpx;
+$radius-round: 50%;
+
+/* 阴影 */
+$shadow-sm: 0 2rpx 8rpx rgba(0, 0, 0, 0.04);
+$shadow-base: 0 4rpx 20rpx rgba(0, 0, 0, 0.08);
+$shadow-lg: 0 8rpx 36rpx rgba(0, 0, 0, 0.12);
+
+/* 通用样式类 */
+/* 页面容器 */
+.page-container {
+  min-height: 100vh;
+  background-color: $bg-page;
+}
+
+/* 卡片 */
+.card {
+  background-color: $bg-primary;
+  border-radius: $radius-base;
+  box-shadow: $shadow-sm;
+  padding: $spacing-base;
+  margin: $spacing-sm $spacing-base;
+}
+
+/* 弹性布局 */
+.flex {
+  display: flex;
+}
+
+.flex-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.flex-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* 文字省略 */
+.text-ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.text-ellipsis-2 {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 安全区 */
+.safe-area-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* 主按钮 */
+.btn-primary {
+  background-color: $primary-color;
+  color: $text-white;
+  border: none;
+  border-radius: $radius-base;
+  padding: $spacing-sm $spacing-lg;
+  font-size: $font-size-base;
+  text-align: center;
+}
+
+.btn-primary:active {
+  background-color: $primary-dark;
+}
+
+.btn-primary[disabled] {
+  background-color: #c0c4cc;
+  color: #fff;
+}

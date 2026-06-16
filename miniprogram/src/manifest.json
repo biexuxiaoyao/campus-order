@@ -1,0 +1,27 @@
+{
+  "name": "校园点餐",
+  "appid": "",
+  "description": "校园点餐小程序",
+  "versionName": "1.0.0",
+  "versionCode": "100",
+  "transformPx": false,
+  "mp-weixin": {
+    "appid": "",
+    "setting": {
+      "urlCheck": false,
+      "es6": true,
+      "postcss": true,
+      "minified": true,
+      "newFeature": true,
+      "autoPrefixWXSS": true
+    },
+    "usingComponents": true,
+    "permission": {
+      "scope.userLocation": {
+        "desc": "获取您的位置信息，用于展示附近的餐厅"
+      }
+    },
+    "requiredPrivateInfos": ["getLocation"],
+    "lazyCodeLoading": "requiredComponents"
+  }
+}

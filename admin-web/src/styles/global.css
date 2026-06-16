@@ -1,0 +1,160 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body, #app {
+  height: 100%;
+  font-family: 'Helvetica Neue', Helvetica, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', Arial, sans-serif;
+}
+
+:root {
+  --primary-color: #07C160;
+  --el-color-primary: #07C160;
+  --el-color-primary-light-3: #39d47c;
+  --el-color-primary-light-5: #6bdf9b;
+  --el-color-primary-light-7: #9debcc;
+  --el-color-primary-light-8: #b9f1d5;
+  --el-color-primary-light-9: #d7f8e8;
+  --el-color-primary-dark-2: #069a4d;
+}
+
+/* Sidebar menu styles */
+.sidebar-menu.el-menu {
+  border-right: none;
+}
+
+.sidebar-menu .el-menu-item.is-active {
+  background-color: rgba(7, 193, 96, 0.1) !important;
+  color: var(--primary-color) !important;
+}
+
+/* Page wrapper */
+.page-container {
+  padding: 20px;
+  height: 100%;
+  overflow-y: auto;
+}
+
+/* Card title */
+.page-header {
+  margin-bottom: 20px;
+  font-size: 20px;
+  font-weight: 600;
+  color: #303133;
+}
+
+/* Search bar wrapper */
+.search-bar {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+  align-items: center;
+}
+
+.search-bar .el-input,
+.search-bar .el-select {
+  width: 200px;
+}
+
+/* Stats card grid */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 20px;
+  margin-bottom: 24px;
+}
+
+.stats-card {
+  background: #fff;
+  border-radius: 8px;
+  padding: 20px 24px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.stats-card .label {
+  font-size: 14px;
+  color: #909399;
+}
+
+.stats-card .value {
+  font-size: 28px;
+  font-weight: 700;
+  color: #303133;
+}
+
+.stats-card .sub {
+  font-size: 12px;
+  color: #c0c4cc;
+}
+
+/* Kitchen mode */
+.kitchen-mode {
+  background: #1a1a2e;
+  min-height: 100vh;
+  padding: 16px;
+  color: #fff;
+}
+
+.kitchen-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 16px;
+}
+
+.kitchen-card {
+  background: #16213e;
+  border-radius: 12px;
+  padding: 20px;
+  border: 2px solid #0f3460;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.kitchen-card:hover {
+  border-color: #e94560;
+  transform: translateY(-2px);
+}
+
+.kitchen-card .order-no {
+  font-size: 14px;
+  color: #a0a0b0;
+  margin-bottom: 12px;
+}
+
+.kitchen-card .items {
+  font-size: 20px;
+  line-height: 1.8;
+}
+
+.kitchen-card .time-badge {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 4px;
+  background: #e94560;
+  color: #fff;
+  font-size: 14px;
+  margin-top: 8px;
+}
+
+.kitchen-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.kitchen-header h1 {
+  font-size: 32px;
+  color: #fff;
+}
+
+.kitchen-header .stats {
+  font-size: 16px;
+  color: #a0a0b0;
+}
