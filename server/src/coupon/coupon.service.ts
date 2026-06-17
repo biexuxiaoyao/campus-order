@@ -242,13 +242,18 @@ export class CouponService {
     orderAmount: number,
   ): number {
     switch (template.type) {
-      case 'full_reduction':
-        // 满减券：直接减免 value 金额
-        return template.value;
+      case 'full_reduction': {
+        // 满减券：直接减免 value 金额，不超过 maxValue
+        let reduction = template.value;
+        if (template.maxValue && reduction > template.maxValue) {
+          reduction = template.maxValue;
+        }
+        return reduction;
+      }
 
       case 'discount': {
-        // 折扣券：orderAmount * value / 100（value=80 即打 8 折），不超过 maxValue
-        const discount = Math.floor(orderAmount * template.value / 100);
+        // 折扣券：value=80 即打 8 折，折扣金额 = orderAmount * (100-value) / 100，不超过 maxValue
+        const discount = Math.floor(orderAmount * (100 - template.value) / 100);
         if (template.maxValue && discount > template.maxValue) {
           return template.maxValue;
         }

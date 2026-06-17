@@ -1,4 +1,4 @@
-import { Injectable, NestMiddleware } from '@nestjs/common';
+import { Injectable, NestMiddleware, ForbiddenException } from '@nestjs/common';
 import { Request, Response, NextFunction } from 'express';
 import { PrismaService } from '../../prisma/prisma.service';
 
@@ -28,6 +28,11 @@ export class TenantMiddleware implements NestMiddleware {
       if (tenantId) {
         const tenant = await this.prisma.tenant.findUnique({ where: { id: tenantId } });
         if (tenant && tenant.status === 'active') {
+          // 验证已认证管理员用户的 tenantId 与请求的 tenantId 一致
+          const adminUser = (req as any).user;
+          if (adminUser && adminUser.tenantId !== tenantId) {
+            throw new ForbiddenException('无权访问该租户');
+          }
           req.tenantId = tenant.id;
           req.tenantName = tenant.name;
         }

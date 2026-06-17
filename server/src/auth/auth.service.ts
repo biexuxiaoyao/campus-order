@@ -43,7 +43,7 @@ export class AuthService {
     });
 
     const refreshToken = await this.jwt.signAsync(
-      { sub: user.id, tenantId: tenant.id, type: 'refresh' },
+      { sub: user.id, tenantId: tenant.id, openid: session.openid, type: 'refresh' },
       { expiresIn: '7d' },
     );
 

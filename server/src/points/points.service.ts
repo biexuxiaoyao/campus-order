@@ -32,79 +32,88 @@ export class PointsService {
     const tomorrowMidnight = this._dayStart(
       new Date(todayMidnight.getTime() + 86400000),
     );
-
-    // 检查今天是否已签到
-    const todayRecord = await this.prisma.signInRecord.findFirst({
-      where: {
-        userId,
-        tenantId,
-        signDate: {
-          gte: todayMidnight,
-          lt: tomorrowMidnight,
-        },
-      },
-    });
-
-    if (todayRecord) {
-      throw new ConflictException('今天已签到');
-    }
-
-    // 查询昨天的签到记录计算连续天数
     const yesterdayMidnight = this._dayStart(
       new Date(todayMidnight.getTime() - 86400000),
     );
 
-    const yesterdayRecord = await this.prisma.signInRecord.findFirst({
-      where: {
-        userId,
-        tenantId,
-        signDate: {
-          gte: yesterdayMidnight,
-          lt: todayMidnight,
+    return this.prisma.$transaction(async (tx) => {
+      // 检查今天是否已签到
+      const todayRecord = await tx.signInRecord.findFirst({
+        where: {
+          userId,
+          tenantId,
+          signDate: {
+            gte: todayMidnight,
+            lt: tomorrowMidnight,
+          },
         },
-      },
-    });
+      });
 
-    const consecutiveDays = yesterdayRecord
-      ? yesterdayRecord.consecutiveDays + 1
-      : 1;
+      if (todayRecord) {
+        throw new ConflictException('今天已签到');
+      }
 
-    // 积分 = 10 + min(consecutiveDays - 1, 5)，范围 10~15
-    const bonusPoints = Math.min(consecutiveDays - 1, 5);
-    const totalPoints = 10 + bonusPoints;
+      // 查询昨天的签到记录计算连续天数
+      const yesterdayRecord = await tx.signInRecord.findFirst({
+        where: {
+          userId,
+          tenantId,
+          signDate: {
+            gte: yesterdayMidnight,
+            lt: todayMidnight,
+          },
+        },
+      });
 
-    const account = await this._getOrCreateAccount(userId, tenantId);
+      const consecutiveDays = yesterdayRecord
+        ? yesterdayRecord.consecutiveDays + 1
+        : 1;
 
-    await this.prisma.$transaction([
-      this.prisma.signInRecord.create({
+      // 积分 = 10 + min(consecutiveDays - 1, 5)，范围 10~15
+      const bonusPoints = Math.min(consecutiveDays - 1, 5);
+      const totalPoints = 10 + bonusPoints;
+
+      // 获取或创建账户（事务内）
+      let account = await tx.pointsAccount.findUnique({
+        where: { userId_tenantId: { userId, tenantId } },
+      });
+      if (!account) {
+        account = await tx.pointsAccount.create({
+          data: { userId, tenantId },
+        });
+      }
+
+      await tx.signInRecord.create({
         data: {
           userId,
           tenantId,
           signDate: todayMidnight,
           consecutiveDays,
         },
-      }),
-      this.prisma.pointsAccount.update({
+      });
+
+      const updated = await tx.pointsAccount.update({
         where: { id: account.id },
         data: {
-          balance: account.balance + totalPoints,
-          totalEarned: account.totalEarned + totalPoints,
+          balance: { increment: totalPoints },
+          totalEarned: { increment: totalPoints },
         },
-      }),
-      this.prisma.pointsTransaction.create({
+      });
+
+      await tx.pointsTransaction.create({
         data: {
           accountId: account.id,
           type: 'earn',
           points: totalPoints,
         },
-      }),
-    ]);
+      });
 
-    return {
-      earned: totalPoints,
-      consecutiveDays,
-      balance: account.balance + totalPoints,
-    };
+      return {
+        earned: totalPoints,
+        consecutiveDays,
+        balance: updated.balance,
+      };
+    });
   }
 
   /**
@@ -122,12 +131,12 @@ export class PointsService {
 
     const account = await this._getOrCreateAccount(userId, tenantId);
 
-    await this.prisma.$transaction([
+    const [updated] = await this.prisma.$transaction([
       this.prisma.pointsAccount.update({
         where: { id: account.id },
         data: {
-          balance: account.balance + points,
-          totalEarned: account.totalEarned + points,
+          balance: { increment: points },
+          totalEarned: { increment: points },
         },
       }),
       this.prisma.pointsTransaction.create({
@@ -140,7 +149,7 @@ export class PointsService {
       }),
     ]);
 
-    return { balance: account.balance + points };
+    return { balance: updated.balance };
   }
 
   /**
@@ -158,26 +167,28 @@ export class PointsService {
 
     const account = await this._getOrCreateAccount(userId, tenantId);
 
-    if (account.balance < points) {
-      throw new BadRequestException('积分余额不足');
-    }
-
-    await this.prisma.$transaction([
-      this.prisma.pointsAccount.update({
+    await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.pointsAccount.update({
         where: { id: account.id },
-        data: { balance: account.balance - points },
-      }),
-      this.prisma.pointsTransaction.create({
+        data: { balance: { decrement: points } },
+      });
+      if (updated.balance < 0) {
+        throw new BadRequestException('积分余额不足');
+      }
+      await tx.pointsTransaction.create({
         data: {
           accountId: account.id,
           type: 'consume',
           points,
           ruleId: description,
         },
-      }),
-    ]);
+      });
+    });
 
-    return { balance: account.balance - points };
+    const refreshed = await this.prisma.pointsAccount.findUnique({
+      where: { id: account.id },
+    });
+    return { balance: refreshed!.balance };
   }
 
   /**

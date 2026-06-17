@@ -359,16 +359,16 @@ export class OrderService {
       throw new ForbiddenException('无权操作该订单');
     }
 
-    if (order.status !== 'pending') {
-      throw new BadRequestException('只能取消待支付的订单');
-    }
-
     await this.prisma.$transaction(async (tx) => {
-      // Update status to cancelled
-      await tx.order.update({
-        where: { id: orderId },
+      // Atomically set status to cancelled only if still pending
+      const result = await tx.order.updateMany({
+        where: { id: orderId, status: 'pending' },
         data: { status: 'cancelled' },
       });
+
+      if (result.count === 0) {
+        throw new ConflictException('订单状态已变更，无法取消');
+      }
 
       // Add timeline
       await tx.orderTimeline.create({
@@ -508,34 +508,36 @@ export class OrderService {
 
   /** Generate next pickup number for a store (auto-increment: A001, A002...) */
   async generatePickupNo(storeId: string): Promise<string> {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
+    return this.prisma.$transaction(async (tx) => {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
 
-    // Find the latest order today for this store that has a pickupNo
-    const lastOrder = await this.prisma.order.findFirst({
-      where: {
-        storeId,
-        pickupNo: { not: null },
-        updatedAt: {
-          gte: today,
-          lt: tomorrow,
+      // Find the latest order today for this store that has a pickupNo
+      const lastOrder = await tx.order.findFirst({
+        where: {
+          storeId,
+          pickupNo: { not: null },
+          updatedAt: {
+            gte: today,
+            lt: tomorrow,
+          },
         },
-      },
-      orderBy: { updatedAt: 'desc' },
-      select: { pickupNo: true },
-    });
+        orderBy: { pickupNo: 'desc' },
+        select: { pickupNo: true },
+      });
 
-    let nextNum = 1;
-    if (lastOrder?.pickupNo) {
-      const match = lastOrder.pickupNo.match(/^A(\d+)$/);
-      if (match) {
-        nextNum = parseInt(match[1], 10) + 1;
+      let nextNum = 1;
+      if (lastOrder?.pickupNo) {
+        const match = lastOrder.pickupNo.match(/^A(\d+)$/);
+        if (match) {
+          nextNum = parseInt(match[1], 10) + 1;
+        }
       }
-    }
 
-    return `A${nextNum.toString().padStart(3, '0')}`;
+      return `A${nextNum.toString().padStart(3, '0')}`;
+    });
   }
 
   /** Approve or reject a refund */

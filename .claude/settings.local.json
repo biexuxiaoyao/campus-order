@@ -44,7 +44,9 @@
       "Bash(taskkill *)",
       "Bash(pnpm *)",
       "Bash(cross-env *)",
-      "Bash(vite *)"
+      "Bash(vite *)",
+      "Bash(/c/Users/25220/Projects/campus-order/server/node_modules/.bin/nest build *)",
+      "Bash(node_modules/.bin/nest build *)"
     ]
   }
 }

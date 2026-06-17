@@ -58,11 +58,13 @@ export class ScheduleService {
               });
             }
 
-            // Update order status to cancelled
-            await tx.order.update({
-              where: { id: order.id },
+            // Update order status to cancelled (only if still pending)
+            const updated = await tx.order.updateMany({
+              where: { id: order.id, status: 'pending' },
               data: { status: 'cancelled' },
             });
+
+            if (updated.count === 0) return; // Order was already paid or otherwise modified
 
             // Add timeline entry
             await tx.orderTimeline.create({

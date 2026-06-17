@@ -8,6 +8,7 @@ import {
   Headers,
   UnauthorizedException,
   BadRequestException,
+  ForbiddenException,
 } from '@nestjs/common';
 import type { Request } from 'express';
 import { PaymentService } from './payment.service';
@@ -16,7 +17,11 @@ import { Public } from '../common/decorators/public.decorator';
 
 @Controller()
 export class PaymentController {
-  constructor(private payment: PaymentService) {}
+  private readonly baseUrl: string;
+
+  constructor(private payment: PaymentService) {
+    this.baseUrl = process.env.API_BASE_URL || `http://localhost:${process.env.PORT || 3000}`;
+  }
 
   /**
    * 预支付下单
@@ -39,10 +44,8 @@ export class PaymentController {
       throw new BadRequestException('未获取到微信 openid，请重新登录');
     }
 
-    // 构建回调地址
-    const protocol = req.protocol || 'https';
-    const host = req.get('host') || 'localhost';
-    const notifyUrl = `${protocol}://${host}/api/payment/notify`;
+    // 构建回调地址（使用配置的基础 URL，避免 Host 头注入）
+    const notifyUrl = `${this.baseUrl}/api/payment/notify`;
 
     return this.payment.prepay(
       userId,
@@ -96,9 +99,13 @@ export class PaymentController {
    */
   @Post('api/payment/refund/:orderId')
   async refund(
+    @Req() req: Request,
     @Param('orderId') orderId: string,
     @Body() body: { amount?: number; reason?: string },
   ) {
+    if (!(req.user as any)?.isAdmin) {
+      throw new ForbiddenException('仅管理员可操作退款');
+    }
     return this.payment.refund(orderId, body.amount, body.reason);
   }
 }

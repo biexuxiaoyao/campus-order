@@ -31,23 +31,22 @@ export class PrepaidService {
 
     const account = await this._getOrCreateAccount(userId, tenantId, dto.type);
 
-    const balanceAfter = account.balance + amountInFen;
-
-    const [transaction] = await this.prisma.$transaction([
-      this.prisma.prepaidTransaction.create({
+    const [transaction] = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.prepaidAccount.update({
+        where: { id: account.id },
+        data: { balance: { increment: amountInFen } },
+      });
+      const txn = await tx.prepaidTransaction.create({
         data: {
           accountId: account.id,
           type: 'purchase',
           amount: amountInFen,
-          balanceAfter,
+          balanceAfter: updated.balance,
           channel: 'wechat',
         },
-      }),
-      this.prisma.prepaidAccount.update({
-        where: { id: account.id },
-        data: { balance: balanceAfter },
-      }),
-    ]);
+      });
+      return [txn];
+    });
 
     // 返回模拟支付参数（后续对接微信支付）
     return {
@@ -74,29 +73,30 @@ export class PrepaidService {
   ) {
     const account = await this._getOrCreateAccount(userId, tenantId, accountType);
 
-    if (account.balance < amount) {
-      throw new BadRequestException('账户余额不足');
-    }
+    const [transaction] = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.prepaidAccount.updateMany({
+        where: { id: account.id, balance: { gte: amount } },
+        data: { balance: { decrement: amount } },
+      });
+      if (updated.count === 0) throw new BadRequestException('账户余额不足');
 
-    const balanceAfter = account.balance - amount;
+      const newAccount = await tx.prepaidAccount.findUnique({
+        where: { id: account.id },
+      });
 
-    await this.prisma.$transaction([
-      this.prisma.prepaidTransaction.create({
+      const txn = await tx.prepaidTransaction.create({
         data: {
           accountId: account.id,
           type: 'consume',
           amount,
-          balanceAfter,
+          balanceAfter: newAccount!.balance,
           channel: `order_${orderId}`,
         },
-      }),
-      this.prisma.prepaidAccount.update({
-        where: { id: account.id },
-        data: { balance: balanceAfter },
-      }),
-    ]);
+      });
+      return [txn];
+    });
 
-    return { balanceAfter };
+    return { balanceAfter: transaction.balanceAfter };
   }
 
   /**
@@ -110,25 +110,24 @@ export class PrepaidService {
   ) {
     const account = await this._getOrCreateAccount(userId, tenantId, 'personal');
 
-    const balanceAfter = account.balance + amount;
-
-    await this.prisma.$transaction([
-      this.prisma.prepaidTransaction.create({
+    const [transaction] = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.prepaidAccount.update({
+        where: { id: account.id },
+        data: { balance: { increment: amount } },
+      });
+      const txn = await tx.prepaidTransaction.create({
         data: {
           accountId: account.id,
           type: 'refund',
           amount,
-          balanceAfter,
+          balanceAfter: updated.balance,
           channel: reason ? `reason:${reason}` : undefined,
         },
-      }),
-      this.prisma.prepaidAccount.update({
-        where: { id: account.id },
-        data: { balance: balanceAfter },
-      }),
-    ]);
+      });
+      return [txn];
+    });
 
-    return { balanceAfter };
+    return { balanceAfter: transaction.balanceAfter };
   }
 
   /**
