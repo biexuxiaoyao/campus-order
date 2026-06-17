@@ -46,7 +46,12 @@
       "Bash(cross-env *)",
       "Bash(vite *)",
       "Bash(/c/Users/25220/Projects/campus-order/server/node_modules/.bin/nest build *)",
-      "Bash(node_modules/.bin/nest build *)"
+      "Bash(node_modules/.bin/nest build *)",
+      "Bash(awk '{print $5}')",
+      "Bash(xargs -I{} taskkill //PID {} //F)",
+      "Bash(node_modules/.bin/jest --config ./test/jest-e2e.json --forceExit --no-cache)",
+      "Bash(npm run *)",
+      "Read(//tmp/**)"
     ]
   }
 }

@@ -4,9 +4,11 @@ import {
   Delete,
   Body,
   UseInterceptors,
+  UseGuards,
   UploadedFiles,
   Headers,
 } from '@nestjs/common';
+import { AuthGuard } from '@nestjs/passport';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { UploadService } from './upload.service';
 import { DeleteFileDto } from './dto/delete-file.dto';
@@ -16,6 +18,7 @@ import { multerConfig } from './multer.config';
 export class UploadController {
   constructor(private readonly uploadService: UploadService) {}
 
+  @UseGuards(AuthGuard('jwt'))
   @Post()
   @UseInterceptors(
     FileFieldsInterceptor(
@@ -27,11 +30,12 @@ export class UploadController {
     @UploadedFiles() fileFields: { files?: Express.Multer.File[] },
     @Headers('x-tenant-id') tenantId: string,
   ): Promise<{ urls: string[] }> {
-    const files = fileFields.files ?? [];
+    const files = fileFields?.files ?? [];
     const urls = await this.uploadService.saveFiles(files, tenantId);
     return { urls };
   }
 
+  @UseGuards(AuthGuard('jwt'))
   @Delete()
   async delete(
     @Body() dto: DeleteFileDto,

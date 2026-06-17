@@ -9,7 +9,9 @@ import {
   Query,
   Headers,
   Req,
+  UseGuards,
 } from '@nestjs/common';
+import { AuthGuard } from '@nestjs/passport';
 import { CouponService } from './coupon.service';
 import { CreateCouponTemplateDto } from './dto/create-coupon-template.dto';
 import { UpdateCouponTemplateDto } from './dto/update-coupon-template.dto';
@@ -52,6 +54,7 @@ export class CouponMerchantController {
 
 /** C 端：用户领券/查券 */
 @Controller('api')
+@UseGuards(AuthGuard('jwt'))
 export class CouponController {
   constructor(private coupon: CouponService) {}
 
@@ -60,7 +63,7 @@ export class CouponController {
     @Req() req: any,
     @Query('status') status?: string,
   ) {
-    return this.coupon.getUserCoupons(req.user.userId, status);
+    return this.coupon.getUserCoupons(req.user?.userId, status);
   }
 
   @Get('coupons/available')
@@ -69,7 +72,7 @@ export class CouponController {
     @Query('orderAmount') orderAmount: string,
   ) {
     const amount = parseInt(orderAmount, 10) || 0;
-    return this.coupon.getAvailableForOrder(req.user.userId, amount);
+    return this.coupon.getAvailableForOrder(req.user?.userId, amount);
   }
 
   @Post('coupons/:id/claim')
@@ -77,6 +80,6 @@ export class CouponController {
     @Req() req: any,
     @Param('id') templateId: string,
   ) {
-    return this.coupon.claim(req.user.userId, templateId);
+    return this.coupon.claim(req.user?.userId, templateId);
   }
 }

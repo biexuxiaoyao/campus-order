@@ -8,7 +8,9 @@ import {
   Query,
   Headers,
   Req,
+  UseGuards,
 } from '@nestjs/common';
+import { AuthGuard } from '@nestjs/passport';
 import { OrderService } from './order.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { QueryOrderDto } from './dto/query-order.dto';
@@ -16,6 +18,7 @@ import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
 
 /** C-end: customer-facing order endpoints */
 @Controller('api')
+@UseGuards(AuthGuard('jwt'))
 export class OrderController {
   constructor(private orderService: OrderService) {}
 
@@ -25,7 +28,7 @@ export class OrderController {
     @Headers('x-tenant-id') tenantId: string,
     @Body() dto: CreateOrderDto,
   ) {
-    const userId = req.user.userId;
+    const userId = req.user?.userId;
     return this.orderService.create(userId, tenantId, dto);
   }
 
@@ -35,7 +38,7 @@ export class OrderController {
     @Headers('x-tenant-id') tenantId: string,
     @Query() query: QueryOrderDto,
   ) {
-    const userId = req.user.userId;
+    const userId = req.user?.userId;
     return this.orderService.findAll(tenantId, userId, query);
   }
 
@@ -44,7 +47,7 @@ export class OrderController {
     @Req() req: any,
     @Param('id') id: string,
   ) {
-    const userId = req.user.userId;
+    const userId = req.user?.userId;
     return this.orderService.findOne(id, userId);
   }
 
@@ -53,7 +56,7 @@ export class OrderController {
     @Req() req: any,
     @Param('id') id: string,
   ) {
-    const userId = req.user.userId;
+    const userId = req.user?.userId;
     return this.orderService.cancel(id, userId);
   }
 
@@ -62,7 +65,7 @@ export class OrderController {
     @Req() req: any,
     @Param('id') id: string,
   ) {
-    const userId = req.user.userId;
+    const userId = req.user?.userId;
     return this.orderService.reorder(id, userId);
   }
 
@@ -71,13 +74,14 @@ export class OrderController {
     @Req() req: any,
     @Param('id') id: string,
   ) {
-    const userId = req.user.userId;
+    const userId = req.user?.userId;
     return this.orderService.urge(id, userId);
   }
 }
 
 /** Merchant-facing order management endpoints */
 @Controller('api/merchant')
+@UseGuards(AuthGuard('jwt'))
 export class OrderMerchantController {
   constructor(private orderService: OrderService) {}
 
@@ -104,7 +108,7 @@ export class OrderMerchantController {
     @Param('id') id: string,
     @Body() dto: UpdateOrderStatusDto,
   ) {
-    const operatorId = req.user.userId;
+    const operatorId = req.user?.userId;
     return this.orderService.updateStatus(
       id,
       dto.status,
@@ -119,7 +123,7 @@ export class OrderMerchantController {
     @Param('id') id: string,
     @Body() body: { approved: boolean; reason?: string },
   ) {
-    const operatorId = req.user.userId;
+    const operatorId = req.user?.userId;
     return this.orderService.approveRefund(
       id,
       body.approved,
@@ -134,7 +138,7 @@ export class OrderMerchantController {
     @Headers('x-tenant-id') tenantId: string,
     @Body() body: { storeId: string; orderIds: string[] },
   ) {
-    const operatorId = req.user.userId;
+    const operatorId = req.user?.userId;
     return this.orderService.batchConfirm(
       body.storeId,
       body.orderIds,
