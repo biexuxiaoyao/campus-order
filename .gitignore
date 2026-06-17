@@ -15,8 +15,10 @@ dist/
 .DS_Store
 Thumbs.db
 
-# Environment — keep .env.example but exclude real env
-# .env
+# Environment — keep .env.example but exclude real .env
+.env
+.env.local
+.env.*.local
 
 # Logs
 logs/
@@ -34,3 +36,11 @@ node_modules/.prisma/
 
 # Packager output
 packager/output/
+
+# Temp files
+*.tmp
+tmp/
+
+# Claude Code sessions (exclude transcripts)
+.claude/plans/
+.claude/worktrees/

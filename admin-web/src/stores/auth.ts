@@ -14,8 +14,8 @@ export const useAuthStore = defineStore('auth', () => {
       token.value = result.token
       user.value = result.user
       localStorage.setItem('token', result.token)
-      if (result.user.role) {
-        localStorage.setItem('tenantId', String(result.user.id))
+      if (result.user.tenantId) {
+        localStorage.setItem('tenantId', result.user.tenantId)
       }
       ElMessage.success('登录成功')
       router.push('/dashboard')

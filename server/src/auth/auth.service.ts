@@ -82,19 +82,22 @@ export class AuthService {
   /**
    * B端：管理后台用户名密码登录
    */
-  async adminLogin(username: string, password: string, tenantId: string) {
-    const admin = await this.prisma.adminUser.findFirst({
-      where: { tenantId, username },
-    });
+  async adminLogin(username: string, password: string, tenantId?: string) {
+    const where: any = { username };
+    if (tenantId) where.tenantId = tenantId;
+    const admin = await this.prisma.adminUser.findFirst({ where });
 
     if (!admin) throw new UnauthorizedException('用户名或密码错误');
+
+    // 使用查到的实际 tenantId
+    const actualTenantId = admin.tenantId;
 
     // 检查锁定状态
     if (admin.lockedUntil && admin.lockedUntil > new Date()) {
       throw new UnauthorizedException('账号已锁定，请稍后再试');
     }
 
-    // 验证密码 (TODO: bcrypt)
+    // 验证密码
     const bcrypt = require('bcryptjs');
     const valid = await bcrypt.compare(password, admin.passwordHash);
 
@@ -121,10 +124,10 @@ export class AuthService {
     });
 
     const token = await this.jwt.signAsync(
-      { sub: admin.id, tenantId, role: admin.role, isAdmin: true },
+      { sub: admin.id, tenantId: actualTenantId, role: admin.role, isAdmin: true },
       { expiresIn: '12h' },
     );
 
-    return { token, user: { id: admin.id, username: admin.username, role: admin.role } };
+    return { token, user: { id: admin.id, username: admin.username, role: admin.role, tenantId: actualTenantId } };
   }
 }

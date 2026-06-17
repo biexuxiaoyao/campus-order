@@ -4,6 +4,10 @@ import { PaginationDto } from '../../common/dto/pagination.dto';
 export class QueryDishDto extends PaginationDto {
   @IsOptional()
   @IsString()
+  storeId?: string;
+
+  @IsOptional()
+  @IsString()
   categoryId?: string;
 
   @IsOptional()

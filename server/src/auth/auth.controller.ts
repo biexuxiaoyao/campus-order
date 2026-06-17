@@ -26,7 +26,7 @@ export class AuthController {
   async adminLogin(
     @Body('username') username: string,
     @Body('password') password: string,
-    @Headers('x-tenant-id') tenantId: string,
+    @Headers('x-tenant-id') tenantId?: string,
   ) {
     return this.auth.adminLogin(username, password, tenantId);
   }

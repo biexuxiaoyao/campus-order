@@ -18,13 +18,13 @@ export interface UserInfo {
 }
 
 export function login(params: LoginParams): Promise<LoginResult> {
-  return http.post('/auth/login', params)
+  return http.post('/auth/admin-login', params)
 }
 
 export function getUserInfo(): Promise<UserInfo> {
-  return http.get('/auth/userinfo')
+  return http.get('/auth/admin-profile')
 }
 
 export function logout(): Promise<void> {
-  return http.post('/auth/logout')
+  return http.post('/auth/admin-logout')
 }

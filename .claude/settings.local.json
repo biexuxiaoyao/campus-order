@@ -3,7 +3,6 @@
     "allow": [
       "WebSearch",
       "WebFetch",
-      "Bash",
       "Read",
       "Edit",
       "Write",
@@ -22,7 +21,30 @@
       "CronDelete",
       "CronList",
       "ScheduleWakeup",
-      "Workflow"
+      "Workflow",
+      "Bash(cd /c/Users/25220/Projects/campus-order*)",
+      "Bash(docker *)",
+      "Bash(npm *)",
+      "Bash(npx *)",
+      "Bash(nest *)",
+      "Bash(git *)",
+      "Bash(curl *)",
+      "Bash(node *)",
+      "Bash(ls *)",
+      "Bash(cat *)",
+      "Bash(mkdir *)",
+      "Bash(rm *)",
+      "Bash(cp *)",
+      "Bash(mv *)",
+      "Bash(echo *)",
+      "Bash(export *)",
+      "Bash(find *)",
+      "Bash(grep *)",
+      "Bash(netstat *)",
+      "Bash(taskkill *)",
+      "Bash(pnpm *)",
+      "Bash(cross-env *)",
+      "Bash(vite *)"
     ]
   }
 }
