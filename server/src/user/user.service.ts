@@ -113,7 +113,7 @@ export class UserService {
   /**
    * 申请注销账户（stub — 完整实现在 V2）
    */
-  async deactivateAccount(userId: string) {
+  deactivateAccount(_userId: string) {
     return { message: '账户已申请注销，将在30天后生效' };
   }
 }

@@ -11,6 +11,7 @@ const dish = ref<Dish | null>(null);
 const loading = ref(true);
 const currentImageIndex = ref(0);
 const showSkuSelector = ref(false);
+const skuMode = ref<'cart' | 'buy'>('cart'); // 区分加入购物车和立即购买
 
 onLoad((options: any) => {
   const id = options?.id;
@@ -36,17 +37,24 @@ function onImageChange(e: any) {
 }
 
 function onAddToCart() {
+  skuMode.value = 'cart';
   showSkuSelector.value = true;
 }
 
 async function onSkuConfirm(skuId: string, quantity: number) {
   showSkuSelector.value = false;
-  await cartStore.addItem(skuId, quantity);
+  if (skuMode.value === 'buy') {
+    // 立即购买：先加到购物车，再跳转结算
+    await cartStore.addItem(skuId, quantity);
+    uni.navigateTo({ url: '/pages/checkout/checkout' });
+  } else {
+    await cartStore.addItem(skuId, quantity);
+  }
 }
 
 function onBuyNow() {
+  skuMode.value = 'buy';
   showSkuSelector.value = true;
-  // TODO: 立即购买流程（选SKU后直接跳转 checkout）
 }
 
 const priceText = computed(() => {

@@ -9,22 +9,28 @@ datasource db {
 // ========== 多租户 ==========
 
 model Tenant {
-  id          String   @id @default(uuid())
-  appId       String   @unique
-  name        String
-  status      String   @default("active") // active, expired, deleted
-  expireAt    DateTime?
-  licenseKey  String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id            String    @id @default(uuid())
+  appId         String    @unique
+  name          String
+  status        String    @default("active") // active, expired, deleted
+  expireAt      DateTime?
+  licenseKey    String?
+  // 审核材料 URLs
+  bizLicenseUrl String? // 营业执照
+  foodPermitUrl String? // 食品经营许可证
+  idCardUrl     String? // 法人身份证
+  storePhotoUrl String? // 门店照片
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
-  brandConfig    BrandConfig?
-  modules        TenantModule[]
-  stores         Store[]
-  users          User[]
-  adminUsers     AdminUser[]
-  companies      Company[]
+  brandConfig      BrandConfig?
+  modules          TenantModule[]
+  stores           Store[]
+  users            User[]
+  adminUsers       AdminUser[]
+  companies        Company[]
   sourceDeliveries SourceDelivery[]
+  modulePurchases  ModulePurchase[]
 }
 
 model BrandConfig {
@@ -50,12 +56,12 @@ model Module {
 }
 
 model TenantModule {
-  id         String   @id @default(uuid())
-  tenantId   String
-  moduleId   String
-  status     String   @default("active") // active, expired
-  expireAt   DateTime?
-  createdAt  DateTime @default(now())
+  id        String    @id @default(uuid())
+  tenantId  String
+  moduleId  String
+  status    String    @default("active") // active, expired
+  expireAt  DateTime?
+  createdAt DateTime  @default(now())
 
   tenant Tenant @relation(fields: [tenantId], references: [id])
   module Module @relation(fields: [moduleId], references: [id])
@@ -63,25 +69,37 @@ model TenantModule {
   @@unique([tenantId, moduleId])
 }
 
+model ModulePurchase {
+  id         String   @id @default(uuid())
+  tenantId   String
+  moduleId   String
+  action     String // purchase, renew, cancel
+  amount     Int      @default(0) // 金额（分）
+  operatorId String?
+  createdAt  DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+}
+
 // ========== 门店 ==========
 
 model Store {
-  id        String   @id @default(uuid())
-  tenantId  String
-  name      String
-  address   String?
-  phone     String?
-  status    String   @default("active")
+  id       String  @id @default(uuid())
+  tenantId String
+  name     String
+  address  String?
+  phone    String?
+  status   String  @default("active")
 
-  categories     Category[]
-  dishes         Dish[]
-  specTemplates  SpecTemplate[]
-  orders         Order[]
-  discountRules  DiscountRule[]
+  categories      Category[]
+  dishes          Dish[]
+  specTemplates   SpecTemplate[]
+  orders          Order[]
+  discountRules   DiscountRule[]
   couponTemplates CouponTemplate[]
-  printers       Printer[]
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  printers        Printer[]
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
 
   tenant Tenant @relation(fields: [tenantId], references: [id])
 }
@@ -95,10 +113,11 @@ model User {
   nickname  String?
   avatar    String?
   phone     String?
+  role      String    @default("customer")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  tenant           Tenant          @relation(fields: [tenantId], references: [id])
+  tenant           Tenant                  @relation(fields: [tenantId], references: [id])
   companyMembers   CompanyMember[]
   orders           Order[]
   groupOrderItems  GroupOrderItem[]
@@ -114,17 +133,17 @@ model User {
 }
 
 model AdminUser {
-  id           String   @id @default(uuid())
-  tenantId     String
-  username     String
-  passwordHash String
-  role         String   // owner, manager, cashier, chef
-  storeId      String?
-  status       String   @default("active")
-  lockedUntil  DateTime?
-  loginAttempts Int     @default(0)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id            String    @id @default(uuid())
+  tenantId      String
+  username      String
+  passwordHash  String
+  role          String // owner, manager, cashier, chef
+  storeId       String?
+  status        String    @default("active")
+  lockedUntil   DateTime?
+  loginAttempts Int       @default(0)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
   tenant Tenant @relation(fields: [tenantId], references: [id])
 
@@ -132,15 +151,15 @@ model AdminUser {
 }
 
 model Company {
-  id         String   @id @default(uuid())
-  tenantId   String
-  name       String
-  buildingId String?
-  address    String?
+  id          String   @id @default(uuid())
+  tenantId    String
+  name        String
+  buildingId  String?
+  address     String?
   adminUserId String?
-  createdAt  DateTime @default(now())
+  createdAt   DateTime @default(now())
 
-  tenant  Tenant           @relation(fields: [tenantId], references: [id])
+  tenant  Tenant          @relation(fields: [tenantId], references: [id])
   members CompanyMember[]
 }
 
@@ -158,7 +177,7 @@ model CompanyMember {
 }
 
 model Building {
-  id      String @id @default(uuid())
+  id      String  @id @default(uuid())
   name    String
   address String?
 }
@@ -178,40 +197,40 @@ model Category {
 }
 
 model Dish {
-  id                  String    @id @default(uuid())
-  storeId             String
-  categoryId          String
-  name                String
-  imageUrl            String?
-  unit                String    @default("份")
-  status              String    @default("draft") // draft, published, offline
-  estimatedToday      Boolean   @default(false)
-  scheduledPublishAt  DateTime?
+  id                   String    @id @default(uuid())
+  storeId              String
+  categoryId           String
+  name                 String
+  imageUrl             String?
+  unit                 String    @default("份")
+  status               String    @default("draft") // draft, published, offline
+  estimatedToday       Boolean   @default(false)
+  scheduledPublishAt   DateTime?
   scheduledUnpublishAt DateTime?
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 
-  store    Store    @relation(fields: [storeId], references: [id])
-  category Category @relation(fields: [categoryId], references: [id])
-  skus     Sku[]
-  images   DishImage[]
-  related  RelatedDish[]  @relation("DishToRelated")
+  store     Store         @relation(fields: [storeId], references: [id])
+  category  Category      @relation(fields: [categoryId], references: [id])
+  skus      Sku[]
+  images    DishImage[]
+  related   RelatedDish[] @relation("DishToRelated")
   relatedBy RelatedDish[] @relation("RelatedToDish")
 }
 
 model DishImage {
-  id       String @id @default(uuid())
-  dishId   String
-  url      String
-  sortOrder Int   @default(0)
+  id        String @id @default(uuid())
+  dishId    String
+  url       String
+  sortOrder Int    @default(0)
 
   dish Dish @relation(fields: [dishId], references: [id])
 }
 
 model RelatedDish {
-  id         String @id @default(uuid())
-  dishId     String
-  relatedId  String
+  id        String @id @default(uuid())
+  dishId    String
+  relatedId String
 
   dish    Dish @relation("DishToRelated", fields: [dishId], references: [id])
   related Dish @relation("RelatedToDish", fields: [relatedId], references: [id])
@@ -220,14 +239,14 @@ model RelatedDish {
 }
 
 model Sku {
-  id             String @id @default(uuid())
+  id             String   @id @default(uuid())
   dishId         String
   specs          Json
-  price          Int    // 单位: 分
-  stock          Int    @default(0)
-  availableStock Int    @default(0)
-  status         String @default("active")
-  version        Int    @default(0) // 乐观锁
+  price          Int // 单位: 分
+  stock          Int      @default(0)
+  availableStock Int      @default(0)
+  status         String   @default("active")
+  version        Int      @default(0) // 乐观锁
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -235,10 +254,10 @@ model Sku {
 }
 
 model SpecTemplate {
-  id      String @id @default(uuid())
-  storeId String
-  name    String
-  options Json
+  id        String   @id @default(uuid())
+  storeId   String
+  name      String
+  options   Json
   createdAt DateTime @default(now())
 
   store Store @relation(fields: [storeId], references: [id])
@@ -263,36 +282,36 @@ model CartItem {
 // ========== 订单 ==========
 
 model Order {
-  id            String   @id @default(uuid())
-  orderNo       String   @unique
+  id            String    @id @default(uuid())
+  orderNo       String    @unique
   tenantId      String
   userId        String
   storeId       String
-  type          String   // individual, group_represent, group_pool
-  status        String   @default("pending")
-  totalAmount   Int      // 单位: 分
+  type          String // individual, group_represent, group_pool
+  status        String    @default("pending")
+  totalAmount   Int // 单位: 分
   pickupNo      String?
   pickupTime    DateTime?
   remark        String?
   tags          Json?
   paymentMethod String?
-  version       Int      @default(0)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  version       Int       @default(0)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
-  user       User        @relation(fields: [userId], references: [id])
-  store      Store       @relation(fields: [storeId], references: [id])
-  items      OrderItem[]
-  timeline   OrderTimeline[]
-  payments   PaymentRecord[]
-  refunds    RefundRecord[]
+  user     User            @relation(fields: [userId], references: [id])
+  store    Store           @relation(fields: [storeId], references: [id])
+  items    OrderItem[]
+  timeline OrderTimeline[]
+  payments PaymentRecord[]
+  refunds  RefundRecord[]
 
   @@index([userId, status, createdAt])
   @@index([storeId, status, createdAt])
 }
 
 model OrderItem {
-  id          String @id @default(uuid())
+  id          String  @id @default(uuid())
   orderId     String
   skuId       String
   dishName    String
@@ -318,24 +337,24 @@ model PaymentRecord {
   orderId       String
   transactionId String?
   amount        Int
-  channel       String   // wechat, balance
-  status        String   // pending, success, failed
+  channel       String // wechat, balance
+  status        String // pending, success, failed
   createdAt     DateTime @default(now())
 
   order Order @relation(fields: [orderId], references: [id])
 }
 
 model RefundRecord {
-  id          String   @id @default(uuid())
-  orderId     String
-  paymentId   String?
-  amount      Int
-  reason      String?
-  status      String   // pending, approved, rejected, completed
-  approvedBy  String?
+  id             String   @id @default(uuid())
+  orderId        String
+  paymentId      String?
+  amount         Int
+  reason         String?
+  status         String // pending, approved, rejected, completed
+  approvedBy     String?
   rejectedReason String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   order Order @relation(fields: [orderId], references: [id])
 }
@@ -343,18 +362,18 @@ model RefundRecord {
 // ========== 团单 ==========
 
 model GroupOrder {
-  id        String   @id @default(uuid())
-  groupNo   String   @unique
+  id        String    @id @default(uuid())
+  groupNo   String    @unique
   tenantId  String
   storeId   String
   leaderId  String
-  mode      String   // pool, represent
-  status    String   @default("pooling")
+  mode      String // pool, represent
+  status    String    @default("pooling")
   deadline  DateTime?
   minAmount Int?
-  condition String   @default("A") // A or B
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  condition String    @default("A") // A or B
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 
   leader User             @relation(fields: [leaderId], references: [id])
   items  GroupOrderItem[]
@@ -384,16 +403,16 @@ model GroupOrderItem {
 // ========== 预充值 ==========
 
 model PrepaidAccount {
-  id            String @id @default(uuid())
+  id            String   @id @default(uuid())
   userId        String
   tenantId      String
   type          String // personal, company
-  balance       Int    @default(0)
-  frozenBalance Int    @default(0)
+  balance       Int      @default(0)
+  frozenBalance Int      @default(0)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  user         User                  @relation(fields: [userId], references: [id])
+  user         User                 @relation(fields: [userId], references: [id])
   transactions PrepaidTransaction[]
 
   @@unique([userId, type])
@@ -402,7 +421,7 @@ model PrepaidAccount {
 model PrepaidTransaction {
   id           String   @id @default(uuid())
   accountId    String
-  type         String   // purchase, consume, refund
+  type         String // purchase, consume, refund
   amount       Int
   balanceAfter Int
   channel      String?
@@ -414,27 +433,27 @@ model PrepaidTransaction {
 // ========== 折扣/积分/优惠券 ==========
 
 model DiscountRule {
-  id          String   @id @default(uuid())
+  id          String    @id @default(uuid())
   storeId     String
   name        String
   conditions  Json
   actions     Json
-  priority    Int      @default(0)
-  isStackable Boolean  @default(false)
+  priority    Int       @default(0)
+  isStackable Boolean   @default(false)
   startAt     DateTime?
   endAt       DateTime?
-  status      String   @default("active")
-  createdAt   DateTime @default(now())
+  status      String    @default("active")
+  createdAt   DateTime  @default(now())
 
   store Store @relation(fields: [storeId], references: [id])
 }
 
 model PointsAccount {
-  id          String @id @default(uuid())
-  userId      String @unique
+  id          String   @id @default(uuid())
+  userId      String   @unique
   tenantId    String
-  balance     Int    @default(0)
-  totalEarned Int    @default(0)
+  balance     Int      @default(0)
+  totalEarned Int      @default(0)
   updatedAt   DateTime @updatedAt
 
   user         User                @relation(fields: [userId], references: [id])
@@ -444,13 +463,13 @@ model PointsAccount {
 }
 
 model PointsTransaction {
-  id        String   @id @default(uuid())
+  id        String    @id @default(uuid())
   accountId String
-  type      String   // earn, consume, expire
+  type      String // earn, consume, expire
   points    Int
   expiresAt DateTime?
   ruleId    String?
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
 
   account PointsAccount @relation(fields: [accountId], references: [id])
 
@@ -458,46 +477,48 @@ model PointsTransaction {
 }
 
 model CouponTemplate {
-  id        String   @id @default(uuid())
+  id        String    @id @default(uuid())
   storeId   String
   name      String
-  type      String   // full_reduction, discount, product
+  type      String // full_reduction, discount, product
   threshold Int?
   value     Int
   maxValue  Int?
   totalQty  Int
-  usedQty   Int      @default(0)
+  usedQty   Int       @default(0)
   validDays Int?
   startAt   DateTime?
   endAt     DateTime?
-  status    String   @default("active")
-  createdAt DateTime @default(now())
+  status    String    @default("active")
+  createdAt DateTime  @default(now())
 
   store       Store        @relation(fields: [storeId], references: [id])
   userCoupons UserCoupon[]
 }
 
 model UserCoupon {
-  id         String   @id @default(uuid())
+  id         String    @id @default(uuid())
   userId     String
   templateId String
-  status     String   @default("available") // available, used, expired
+  status     String    @default("available") // available, used, expired
   usedAt     DateTime?
-  createdAt  DateTime @default(now())
+  createdAt  DateTime  @default(now())
 
   user     User           @relation(fields: [userId], references: [id])
   template CouponTemplate @relation(fields: [templateId], references: [id])
+
+  @@unique([userId, templateId])
 }
 
 // ========== 其他 ==========
 
 model Printer {
-  id       String @id @default(uuid())
-  storeId  String
-  brand    String
-  deviceId String
-  apiKey   String
-  status   String @default("active")
+  id        String   @id @default(uuid())
+  storeId   String
+  brand     String
+  deviceId  String
+  apiKey    String
+  status    String   @default("active")
   createdAt DateTime @default(now())
 
   store Store @relation(fields: [storeId], references: [id])
@@ -516,15 +537,21 @@ model AuditLog {
 }
 
 model SourceDelivery {
-  id          String   @id @default(uuid())
-  tenantId    String
-  version     String
-  modules     Json
-  watermarkId String
-  checksum    String?
-  deliveredAt DateTime?
-  expiresAt   DateTime?
-  createdAt   DateTime @default(now())
+  id              String    @id @default(uuid())
+  tenantId        String
+  version         String
+  modules         Json
+  moduleSnapshot  Json?     // 交付时的模块ID清单: ["base","group-meal",...]
+  watermarkId     String
+  checksum        String?
+  price           Int?      // 本次交付收费（分）
+  baseUpgradeFee  Int?      // 基础升级费（分）
+  newModuleFee    Int?      // 新增模块费（分）
+  status          String    @default("completed") // pending, processing, completed, failed
+  downloadUrl     String?   // 交付包下载链接
+  deliveredAt     DateTime?
+  expiresAt       DateTime?
+  createdAt       DateTime  @default(now())
 
   tenant Tenant @relation(fields: [tenantId], references: [id])
 }
@@ -543,8 +570,8 @@ model SignInRecord {
 }
 
 model NotificationPreference {
-  id        String @id @default(uuid())
-  userId    String @unique
+  id        String   @id @default(uuid())
+  userId    String   @unique
   tenantId  String
   prefs     Json
   updatedAt DateTime @updatedAt

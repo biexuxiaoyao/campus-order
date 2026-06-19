@@ -10,57 +10,17 @@
         :collapse="sidebarCollapsed"
         router
         class="sidebar-menu"
-        background-color="#304156"
-        text-color="#bfcbd9"
-        active-text-color="#07C160"
+        background-color="#fafafa"
+        text-color="#6b7280"
+        active-text-color="#ff6b35"
       >
-        <el-menu-item index="/dashboard">
-          <el-icon><DataAnalysis /></el-icon>
-          <span>数据面板</span>
-        </el-menu-item>
-        <el-menu-item index="/dishes">
-          <el-icon><Food /></el-icon>
-          <span>菜品管理</span>
-        </el-menu-item>
-        <el-menu-item index="/orders">
-          <el-icon><Document /></el-icon>
-          <span>订单管理</span>
-        </el-menu-item>
-        <el-menu-item index="/group-orders">
-          <el-icon><UserFilled /></el-icon>
-          <span>团购订单</span>
-        </el-menu-item>
-        <el-menu-item index="/kitchen">
-          <el-icon><Monitor /></el-icon>
-          <span>厨房模式</span>
-        </el-menu-item>
-        <el-menu-item index="/settings">
-          <el-icon><Setting /></el-icon>
-          <span>营业设置</span>
-        </el-menu-item>
-        <el-menu-item index="/staff">
-          <el-icon><User /></el-icon>
-          <span>员工管理</span>
-        </el-menu-item>
-        <el-menu-item index="/discounts">
-          <el-icon><Discount /></el-icon>
-          <span>优惠规则</span>
-        </el-menu-item>
-        <el-menu-item index="/points">
-          <el-icon><Star /></el-icon>
-          <span>积分管理</span>
-        </el-menu-item>
-        <el-menu-item index="/coupons">
-          <el-icon><Ticket /></el-icon>
-          <span>优惠券</span>
-        </el-menu-item>
-        <el-menu-item index="/audit">
-          <el-icon><List /></el-icon>
-          <span>操作日志</span>
-        </el-menu-item>
-        <el-menu-item index="/brand">
-          <el-icon><Shop /></el-icon>
-          <span>品牌配置</span>
+        <el-menu-item
+          v-for="item in visibleMenuItems"
+          :key="item.route"
+          :index="item.route"
+        >
+          <el-icon><component :is="item.icon" /></el-icon>
+          <span>{{ item.label }}</span>
         </el-menu-item>
       </el-menu>
     </el-aside>
@@ -104,14 +64,30 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, markRaw } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useAppStore } from '@/stores/app'
+import { useModules } from '@/composables/useModules'
+import {
+  DataAnalysis,
+  Food,
+  Document,
+  UserFilled,
+  Monitor,
+  Setting,
+  User,
+  Discount,
+  Star,
+  Ticket,
+  List,
+  Shop,
+} from '@element-plus/icons-vue'
 
 const route = useRoute()
 const authStore = useAuthStore()
 const appStore = useAppStore()
+const { menuItems, canViewMenuItem } = useModules()
 
 const sidebarCollapsed = computed(() => appStore.sidebarCollapsed)
 
@@ -124,6 +100,30 @@ const activeMenu = computed(() => {
 const currentTitle = computed(() => {
   return (route.meta.title as string) || ''
 })
+
+// Icon mapping
+const iconMap: Record<string, any> = {
+  '/dashboard': markRaw(DataAnalysis),
+  '/dishes': markRaw(Food),
+  '/orders': markRaw(Document),
+  '/group-orders': markRaw(UserFilled),
+  '/kitchen': markRaw(Monitor),
+  '/settings': markRaw(Setting),
+  '/staff': markRaw(User),
+  '/discounts': markRaw(Discount),
+  '/points': markRaw(Star),
+  '/coupons': markRaw(Ticket),
+  '/audit': markRaw(List),
+  '/brand': markRaw(Shop),
+}
+
+const userRole = computed(() => authStore.user?.role || 'staff')
+
+const visibleMenuItems = computed(() =>
+  menuItems
+    .filter((item) => canViewMenuItem(item, userRole.value))
+    .map((item) => ({ ...item, icon: iconMap[item.route] })),
+)
 
 function handleCommand(command: string) {
   if (command === 'logout') {
@@ -144,7 +144,8 @@ onMounted(() => {
 }
 
 .layout-aside {
-  background-color: #304156;
+  background: #fafafa;
+  border-right: 1px solid #f0f0f0;
   overflow: hidden;
   transition: width 0.3s;
 }
@@ -154,10 +155,10 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
+  color: #1f2937;
   font-size: 18px;
   font-weight: 600;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid #f0f0f0;
   overflow: hidden;
   white-space: nowrap;
 }
@@ -213,7 +214,7 @@ onMounted(() => {
 }
 
 .layout-main {
-  background: #f0f2f5;
+  background: #f5f5f5;
   padding: 0;
   overflow-y: auto;
 }

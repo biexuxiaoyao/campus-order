@@ -71,7 +71,11 @@ export class PrepaidService {
     amount: number,
     orderId: string,
   ) {
-    const account = await this._getOrCreateAccount(userId, tenantId, accountType);
+    const account = await this._getOrCreateAccount(
+      userId,
+      tenantId,
+      accountType,
+    );
 
     const [transaction] = await this.prisma.$transaction(async (tx) => {
       const updated = await tx.prepaidAccount.updateMany({
@@ -108,7 +112,11 @@ export class PrepaidService {
     amount: number,
     reason?: string,
   ) {
-    const account = await this._getOrCreateAccount(userId, tenantId, 'personal');
+    const account = await this._getOrCreateAccount(
+      userId,
+      tenantId,
+      'personal',
+    );
 
     const [transaction] = await this.prisma.$transaction(async (tx) => {
       const updated = await tx.prepaidAccount.update({

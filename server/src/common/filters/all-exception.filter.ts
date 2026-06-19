@@ -21,11 +21,26 @@ export interface ErrorResponse {
 /**
  * Prisma 已知错误码映射
  */
-const PRISMA_ERROR_MAP: Record<string, { httpStatus: number; code: string; message: string }> = {
-  P2002: { httpStatus: 409, code: 'DATA_CONFLICT', message: '数据冲突，唯一字段重复' },
+const PRISMA_ERROR_MAP: Record<
+  string,
+  { httpStatus: number; code: string; message: string }
+> = {
+  P2002: {
+    httpStatus: 409,
+    code: 'DATA_CONFLICT',
+    message: '数据冲突，唯一字段重复',
+  },
   P2025: { httpStatus: 404, code: 'RECORD_NOT_FOUND', message: '记录未找到' },
-  P2003: { httpStatus: 400, code: 'FOREIGN_KEY_FAILED', message: '外键约束失败' },
-  P2014: { httpStatus: 400, code: 'RELATION_VIOLATION', message: '关联关系违规' },
+  P2003: {
+    httpStatus: 400,
+    code: 'FOREIGN_KEY_FAILED',
+    message: '外键约束失败',
+  },
+  P2014: {
+    httpStatus: 400,
+    code: 'RELATION_VIOLATION',
+    message: '关联关系违规',
+  },
 };
 
 @Catch()

@@ -3,7 +3,13 @@
     {
       "path": "pages/index/index",
       "style": {
-        "navigationBarTitleText": "首页",
+        "navigationBarTitleText": "首页"
+      }
+    },
+    {
+      "path": "pages/menu/menu",
+      "style": {
+        "navigationBarTitleText": "菜单",
         "enablePullDownRefresh": true
       }
     },
@@ -89,10 +95,16 @@
         "selectedIconPath": "static/tab-home-active.png"
       },
       {
-        "pagePath": "pages/group/group",
-        "text": "拼单",
-        "iconPath": "static/tab-group.png",
-        "selectedIconPath": "static/tab-group-active.png"
+        "pagePath": "pages/menu/menu",
+        "text": "菜单",
+        "iconPath": "static/tab-menu.png",
+        "selectedIconPath": "static/tab-menu-active.png"
+      },
+      {
+        "pagePath": "pages/orders/orders",
+        "text": "订单",
+        "iconPath": "static/tab-orders.png",
+        "selectedIconPath": "static/tab-orders-active.png"
       },
       {
         "pagePath": "pages/my/my",

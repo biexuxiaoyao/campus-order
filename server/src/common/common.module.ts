@@ -12,8 +12,8 @@ import { ThrottlerModule } from '@nestjs/throttler';
   imports: [
     ThrottlerModule.forRoot([
       {
-        ttl: 60000,  // 60 秒窗口
-        limit: 60,   // 窗口内最多 60 次请求
+        ttl: 60000, // 60 秒窗口
+        limit: 60, // 窗口内最多 60 次请求
       },
     ]),
   ],

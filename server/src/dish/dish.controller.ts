@@ -7,6 +7,8 @@ import {
   Body,
   Param,
   Query,
+  Headers,
+  Req,
 } from '@nestjs/common';
 import { DishService } from './dish.service';
 import { CreateDishDto } from './dto/create-dish.dto';
@@ -21,8 +23,13 @@ export class DishController {
   // ========== 商家端 ==========
 
   @Get('api/merchant/stores/:storeId/dishes')
-  async list(
-    @Param('storeId') storeId: string,
+  async list(@Param('storeId') storeId: string, @Query() query: QueryDishDto) {
+    return this.dish.findAll(storeId, query);
+  }
+
+  @Get('api/merchant/dishes')
+  async listByQuery(
+    @Query('storeId') storeId: string,
     @Query() query: QueryDishDto,
   ) {
     return this.dish.findAll(storeId, query);
@@ -34,18 +41,12 @@ export class DishController {
   }
 
   @Post('api/merchant/stores/:storeId/dishes')
-  async create(
-    @Param('storeId') storeId: string,
-    @Body() dto: CreateDishDto,
-  ) {
+  async create(@Param('storeId') storeId: string, @Body() dto: CreateDishDto) {
     return this.dish.create(storeId, dto);
   }
 
   @Put('api/merchant/dishes/:id')
-  async update(
-    @Param('id') id: string,
-    @Body() dto: UpdateDishDto,
-  ) {
+  async update(@Param('id') id: string, @Body() dto: UpdateDishDto) {
     return this.dish.update(id, dto);
   }
 
@@ -113,8 +114,18 @@ export class DishController {
 
   @Public()
   @Get('api/dishes')
-  async publicList(@Query() query: QueryDishDto & { storeId: string }) {
-    return this.dish.findPublished(query.storeId, query);
+  async publicList(
+    @Req() req: any,
+    @Query() query: QueryDishDto,
+  ) {
+    const tenantId = req.tenantId;
+    return this.dish.findPublished(tenantId, query.storeId || 'demo-store-001', query);
+  }
+
+  @Public()
+  @Get('api/dishes/categories')
+  async publicCategories(@Req() req: any) {
+    return this.dish.getCategories(req.tenantId);
   }
 
   @Public()

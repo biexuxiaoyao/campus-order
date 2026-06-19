@@ -194,7 +194,7 @@ export class PointsService {
   /**
    * 积分兑换（桩实现，后续对接实物/优惠券系统）
    */
-  async exchange(userId: string, _tenantId: string, dto: ExchangeDto) {
+  exchange(userId: string, _tenantId: string, dto: ExchangeDto) {
     if (dto.type === 'product') {
       return {
         success: true,

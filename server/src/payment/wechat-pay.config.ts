@@ -26,14 +26,29 @@ export class WechatPayConfig {
   readonly isConfigured: boolean;
 
   constructor(private config: ConfigService) {
-    this.mchId = this.config.get<string>('WECHAT_PAY_MCH_ID') || process.env['WECHAT_PAY_MCH_ID'] || '';
-    this.apiV3Key = this.config.get<string>('WECHAT_PAY_API_V3_KEY') || process.env['WECHAT_PAY_API_V3_KEY'] || '';
-    this.serialNo = this.config.get<string>('WECHAT_PAY_SERIAL_NO') || process.env['WECHAT_PAY_SERIAL_NO'] || '';
+    this.mchId =
+      this.config.get<string>('WECHAT_PAY_MCH_ID') ||
+      process.env['WECHAT_PAY_MCH_ID'] ||
+      '';
+    this.apiV3Key =
+      this.config.get<string>('WECHAT_PAY_API_V3_KEY') ||
+      process.env['WECHAT_PAY_API_V3_KEY'] ||
+      '';
+    this.serialNo =
+      this.config.get<string>('WECHAT_PAY_SERIAL_NO') ||
+      process.env['WECHAT_PAY_SERIAL_NO'] ||
+      '';
 
-    const privateKeyPath = this.config.get<string>('WECHAT_PAY_PRIVATE_KEY_PATH') || process.env['WECHAT_PAY_PRIVATE_KEY_PATH'] || '';
+    const privateKeyPath =
+      this.config.get<string>('WECHAT_PAY_PRIVATE_KEY_PATH') ||
+      process.env['WECHAT_PAY_PRIVATE_KEY_PATH'] ||
+      '';
     this.privateKey = this.loadFile(privateKeyPath, '商户私钥');
 
-    const platformCertPath = this.config.get<string>('WECHAT_PAY_PLATFORM_CERT_PATH') || process.env['WECHAT_PAY_PLATFORM_CERT_PATH'] || '';
+    const platformCertPath =
+      this.config.get<string>('WECHAT_PAY_PLATFORM_CERT_PATH') ||
+      process.env['WECHAT_PAY_PLATFORM_CERT_PATH'] ||
+      '';
     this.platformCert = this.loadFile(platformCertPath, '平台证书');
 
     this.isConfigured = !!(
@@ -47,8 +62,8 @@ export class WechatPayConfig {
     if (!this.isConfigured) {
       this.logger.warn(
         '微信支付未完全配置，支付功能将返回 mock 数据。' +
-        '请设置 WECHAT_PAY_MCH_ID, WECHAT_PAY_API_V3_KEY, ' +
-        'WECHAT_PAY_SERIAL_NO, WECHAT_PAY_PRIVATE_KEY_PATH, WECHAT_PAY_PLATFORM_CERT_PATH',
+          '请设置 WECHAT_PAY_MCH_ID, WECHAT_PAY_API_V3_KEY, ' +
+          'WECHAT_PAY_SERIAL_NO, WECHAT_PAY_PRIVATE_KEY_PATH, WECHAT_PAY_PLATFORM_CERT_PATH',
       );
     }
   }
@@ -57,7 +72,7 @@ export class WechatPayConfig {
     if (!path) return null;
     try {
       return fs.readFileSync(path, 'utf-8');
-    } catch (err) {
+    } catch (_err) {
       this.logger.warn(`无法读取${name}文件: ${path}`);
       return null;
     }

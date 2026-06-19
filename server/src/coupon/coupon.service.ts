@@ -3,6 +3,7 @@ import {
   NotFoundException,
   BadRequestException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateCouponTemplateDto } from './dto/create-coupon-template.dto';
 import { UpdateCouponTemplateDto } from './dto/update-coupon-template.dto';
@@ -63,48 +64,80 @@ export class CouponService {
 
   // ==================== C 端领券/查询 ====================
 
+  /** 获取可领取的优惠券模板列表（按门店筛选） */
+  async getClaimableTemplates(storeId: string, userId: string) {
+    const now = new Date();
+    const templates = await this.prisma.couponTemplate.findMany({
+      where: { storeId, status: 'active' },
+    });
+
+    const userCoupons = await this.prisma.userCoupon.findMany({
+      where: { userId, status: { not: 'expired' } },
+    });
+    const claimedIds = new Set(userCoupons.map((uc) => uc.templateId));
+
+    return templates.filter((t) => {
+      if (claimedIds.has(t.id)) return false;               // 已领取
+      if (t.usedQty >= t.totalQty) return false;             // 库存耗尽
+      if (t.startAt && new Date(t.startAt) > now) return false; // 未开始
+      if (t.endAt && new Date(t.endAt) < now) return false;     // 已过期
+      return true;
+    });
+  }
+
   /**
    * 用户领取优惠券
-   * - 每人每模板限领一张
+   * - 每人每模板限领一张（数据库唯一约束兜底）
+   * - 库存扣减使用原子操作防超领
    */
   async claim(userId: string, templateId: string) {
-    const template = await this.prisma.couponTemplate.findUnique({
-      where: { id: templateId },
-    });
-
-    if (!template) {
-      throw new NotFoundException('优惠券模板不存在');
-    }
-
-    if (template.status !== 'active') {
-      throw new BadRequestException('优惠券已下架');
-    }
-
-    if (template.usedQty >= template.totalQty) {
-      throw new BadRequestException('优惠券已被领完');
-    }
-
-    // 检查是否已领取
-    const existing = await this.prisma.userCoupon.findFirst({
-      where: { userId, templateId },
-    });
-
-    if (existing) {
-      throw new BadRequestException('您已领取过该优惠券');
-    }
-
-    const [userCoupon] = await this.prisma.$transaction([
-      this.prisma.userCoupon.create({
-        data: { userId, templateId },
-        include: { template: true },
-      }),
-      this.prisma.couponTemplate.update({
+    return this.prisma.$transaction(async (tx) => {
+      const template = await tx.couponTemplate.findUnique({
         where: { id: templateId },
-        data: { usedQty: template.usedQty + 1 },
-      }),
-    ]);
+      });
 
-    return userCoupon;
+      if (!template) {
+        throw new NotFoundException('优惠券模板不存在');
+      }
+
+      if (template.status !== 'active') {
+        throw new BadRequestException('优惠券已下架');
+      }
+
+      if (template.usedQty >= template.totalQty) {
+        throw new BadRequestException('优惠券已被领完');
+      }
+
+      // 先原子扣库存，防止超领
+      const updated = await tx.couponTemplate.updateMany({
+        where: {
+          id: templateId,
+          usedQty: { lt: template.totalQty },
+        },
+        data: { usedQty: { increment: 1 } },
+      });
+
+      if (updated.count === 0) {
+        throw new BadRequestException('优惠券已被领完');
+      }
+
+      // 唯一约束保证不重复领取
+      try {
+        const userCoupon = await tx.userCoupon.create({
+          data: { userId, templateId },
+          include: { template: true },
+        });
+        return userCoupon;
+      } catch (error) {
+        if (
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === 'P2002'
+        ) {
+          throw new BadRequestException('您已领取过该优惠券');
+        }
+        throw error;
+      }
+    });
   }
 
   /**
@@ -171,7 +204,7 @@ export class CouponService {
   /**
    * 核销优惠券
    */
-  async useCoupon(userCouponId: string, orderId: string) {
+  async useCoupon(userCouponId: string, _orderId: string) {
     const coupon = await this.prisma.userCoupon.findUnique({
       where: { id: userCouponId },
     });
@@ -237,10 +270,7 @@ export class CouponService {
 
   // ==================== private ====================
 
-  private _calcDiscount(
-    template: any,
-    orderAmount: number,
-  ): number {
+  private _calcDiscount(template: any, orderAmount: number): number {
     switch (template.type) {
       case 'full_reduction': {
         // 满减券：直接减免 value 金额，不超过 maxValue
@@ -253,7 +283,9 @@ export class CouponService {
 
       case 'discount': {
         // 折扣券：value=80 即打 8 折，折扣金额 = orderAmount * (100-value) / 100，不超过 maxValue
-        const discount = Math.floor(orderAmount * (100 - template.value) / 100);
+        const discount = Math.floor(
+          (orderAmount * (100 - template.value)) / 100,
+        );
         if (template.maxValue && discount > template.maxValue) {
           return template.maxValue;
         }

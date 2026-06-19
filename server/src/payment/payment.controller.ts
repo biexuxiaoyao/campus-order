@@ -6,10 +6,12 @@ import {
   Param,
   Req,
   Headers,
+  UseGuards,
   UnauthorizedException,
   BadRequestException,
   ForbiddenException,
 } from '@nestjs/common';
+import { AuthGuard } from '@nestjs/passport';
 import type { Request } from 'express';
 import { PaymentService } from './payment.service';
 import { PrepayDto } from './dto/prepay.dto';
@@ -20,7 +22,9 @@ export class PaymentController {
   private readonly baseUrl: string;
 
   constructor(private payment: PaymentService) {
-    this.baseUrl = process.env.API_BASE_URL || `http://localhost:${process.env.PORT || 3000}`;
+    this.baseUrl =
+      process.env.API_BASE_URL ||
+      `http://localhost:${process.env.PORT || 3000}`;
   }
 
   /**
@@ -28,11 +32,9 @@ export class PaymentController {
    *
    * 返回小程序调起支付所需的 JSAPI 参数。
    */
+  @UseGuards(AuthGuard('jwt'))
   @Post('api/payment/prepay')
-  async prepay(
-    @Req() req: Request,
-    @Body() dto: PrepayDto,
-  ) {
+  async prepay(@Req() req: Request, @Body() dto: PrepayDto) {
     const user = req.user as any;
     const userId = user?.userId;
     const openid = user?.openid;
@@ -86,9 +88,7 @@ export class PaymentController {
    * 查询支付状态
    */
   @Get('api/payment/query/:orderId')
-  async query(
-    @Param('orderId') orderId: string,
-  ) {
+  async query(@Param('orderId') orderId: string) {
     return this.payment.queryPayment(orderId);
   }
 

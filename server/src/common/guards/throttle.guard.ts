@@ -1,9 +1,15 @@
 import { Injectable } from '@nestjs/common';
-import { ThrottlerGuard, ThrottlerException, ThrottlerRequest } from '@nestjs/throttler';
+import {
+  ThrottlerGuard,
+  ThrottlerException,
+  ThrottlerRequest,
+} from '@nestjs/throttler';
 
 @Injectable()
 export class ThrottleGuard extends ThrottlerGuard {
-  protected async handleRequest(requestProps: ThrottlerRequest): Promise<boolean> {
+  protected async handleRequest(
+    requestProps: ThrottlerRequest,
+  ): Promise<boolean> {
     try {
       return await super.handleRequest(requestProps);
     } catch (error) {

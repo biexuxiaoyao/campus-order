@@ -39,10 +39,7 @@ export class DiscountController {
   }
 
   @Put('discounts/:id')
-  async update(
-    @Param('id') id: string,
-    @Body() dto: UpdateDiscountRuleDto,
-  ) {
+  async update(@Param('id') id: string, @Body() dto: UpdateDiscountRuleDto) {
     return this.discount.update(id, dto);
   }
 

@@ -4,16 +4,20 @@ import { onLoad } from '@dcloudio/uni-app';
 import { getGroupOrderDetail, joinGroupOrder, closeGroupOrder } from '@/api/group-order';
 import type { GroupOrder } from '@/api/group-order';
 import { useAuthStore } from '@/stores/auth';
+import { useCartStore } from '@/stores/cart';
 
 const authStore = useAuthStore();
+const cartStore = useCartStore();
 const group = ref<GroupOrder | null>(null);
 const loading = ref(true);
+const joining = ref(false);
 const groupId = ref('');
 
 onLoad((options: any) => {
   groupId.value = options?.id || '';
   if (groupId.value) {
     loadGroup();
+    cartStore.fetchCart();
   }
 });
 
@@ -50,10 +54,42 @@ function isLeader(): boolean {
 }
 
 async function onJoin() {
-  // 跳转到菜品列表选择菜品
-  uni.navigateTo({ url: '/pages/index/index' });
-  uni.showToast({ title: '请选择菜品后返回拼单详情加入', icon: 'none' });
-  // TODO: 实际流程：选择菜品 → 确认 SKU → 调用 joinGroupOrder
+  // 检查购物车是否有商品
+  if (cartStore.itemCount === 0) {
+    const res = await uni.showModal({
+      title: '提示',
+      content: '请先去首页选择菜品加入购物车，再返回加入拼单',
+      confirmText: '去选菜',
+      cancelText: '取消',
+    });
+    if (res.confirm) {
+      uni.switchTab({ url: '/pages/index/index' });
+    }
+    return;
+  }
+
+  // 确认加入
+  const confirmRes = await uni.showModal({
+    title: '确认加入',
+    content: `将购物车中 ${cartStore.itemCount} 件商品（¥${formatPrice(cartStore.totalAmount)}）加入此拼单？`,
+    confirmText: '确认加入',
+  });
+  if (!confirmRes.confirm) return;
+
+  joining.value = true;
+  try {
+    const cartItemIds = cartStore.items.map((i) => i.id);
+    await joinGroupOrder(groupId.value, { cartItemIds });
+    uni.showToast({ title: '加入拼单成功', icon: 'success' });
+    // 清空购物车
+    await cartStore.clearCart();
+    // 刷新拼单详情
+    loadGroup();
+  } catch (e) {
+    console.error('[GroupDetail] 加入拼单失败', e);
+  } finally {
+    joining.value = false;
+  }
 }
 
 async function onClosePool() {

@@ -3,11 +3,11 @@ import {
   Logger,
   BadRequestException,
   NotFoundException,
-  ConflictException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { HttpService } from '@nestjs/axios';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotifyService } from '../notify/notify.service';
 import { WechatPayConfig } from './wechat-pay.config';
 import {
   WechatPrepayRequest,
@@ -32,6 +32,7 @@ export class PaymentService {
     private http: HttpService,
     private wechatConfig: WechatPayConfig,
     private config: ConfigService,
+    private notify: NotifyService,
   ) {}
 
   // ========================= 预支付下单 =========================
@@ -51,9 +52,15 @@ export class PaymentService {
     orderId: string,
     channel: string,
     notifyUrl: string,
-  ): Promise<{ wxJSAPIParams?: WxJSAPIParams; paymentId: string; channel: string }> {
+  ): Promise<{
+    wxJSAPIParams?: WxJSAPIParams;
+    paymentId: string;
+    channel: string;
+  }> {
     // 1. 查询订单
-    const order = await this.prisma.order.findUnique({ where: { id: orderId } });
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+    });
     if (!order) {
       throw new NotFoundException('订单不存在');
     }
@@ -61,7 +68,9 @@ export class PaymentService {
       throw new BadRequestException('订单不属于当前用户');
     }
     if (order.status !== 'pending') {
-      throw new BadRequestException('订单状态不允许支付，当前状态：' + order.status);
+      throw new BadRequestException(
+        '订单状态不允许支付，当前状态：' + order.status,
+      );
     }
 
     // 2. 如果微信支付未配置，返回 mock 数据用于开发调试
@@ -175,7 +184,13 @@ export class PaymentService {
     // 1. 验签 — 如果配置不可用，开发环境跳过验签
     if (this.wechatConfig.isConfigured) {
       const bodyStr = JSON.stringify(body);
-      const valid = this.verifySignature(bodyStr, signature, serial, timestamp, nonce);
+      const valid = this.verifySignature(
+        bodyStr,
+        signature,
+        serial,
+        timestamp,
+        nonce,
+      );
       if (!valid) {
         throw new BadRequestException('微信支付回调签名验证失败');
       }
@@ -241,7 +256,23 @@ export class PaymentService {
       });
     });
 
-    this.logger.log(`支付成功：订单 ${transaction.out_trade_no}，交易号 ${transaction.transaction_id}`);
+    this.logger.log(
+      `支付成功：订单 ${transaction.out_trade_no}，交易号 ${transaction.transaction_id}`,
+    );
+
+    // Fire-and-forget: notify user of payment success
+    this.notify
+      .notifyOrderPaid(order.userId, order.tenantId, {
+        orderNo: order.orderNo,
+        totalAmount: order.totalAmount,
+        store: { name: '校园订餐' },
+      })
+      .catch((err) =>
+        this.logger.error(
+          `[Notify] 支付成功通知发送失败: ${(err as Error).message}`,
+        ),
+      );
+
     return true;
   }
 
@@ -262,11 +293,7 @@ export class PaymentService {
 
   // ========================= 退款 =========================
 
-  async refund(
-    orderId: string,
-    amount?: number,
-    reason?: string,
-  ) {
+  async refund(orderId: string, amount?: number, reason?: string) {
     // 1. 查找支付记录
     const payment = await this.prisma.paymentRecord.findFirst({
       where: { orderId, status: 'success' },
@@ -276,7 +303,9 @@ export class PaymentService {
       throw new NotFoundException('未找到已支付的支付记录');
     }
 
-    const order = await this.prisma.order.findUnique({ where: { id: orderId } });
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+    });
     if (!order) {
       throw new NotFoundException('订单不存在');
     }
@@ -317,7 +346,7 @@ export class PaymentService {
     };
 
     // 4. 调用微信退款 API（需要 mTLS 证书，这里使用基础签名认证）
-    const refundResponse = await this.callWechatApi<WechatRefundResponse>(
+    await this.callWechatApi<WechatRefundResponse>(
       'POST',
       `/v3/refund/domestic/refunds`,
       refundRequest,
@@ -458,7 +487,8 @@ export class PaymentService {
       );
       return response.data;
     } catch (err: any) {
-      const message = err.response?.data?.message || err.message || '微信支付 API 调用失败';
+      const message =
+        err.response?.data?.message || err.message || '微信支付 API 调用失败';
       this.logger.error(`微信支付 API 调用失败: ${method} ${path}`, message);
       throw new BadRequestException(message);
     }
@@ -534,6 +564,10 @@ export class PaymentService {
    * 获取小程序 AppId
    */
   private getAppId(): string {
-    return this.config.get<string>('WECHAT_APP_ID') || process.env['WECHAT_APP_ID'] || '';
+    return (
+      this.config.get<string>('WECHAT_APP_ID') ||
+      process.env['WECHAT_APP_ID'] ||
+      ''
+    );
   }
 }

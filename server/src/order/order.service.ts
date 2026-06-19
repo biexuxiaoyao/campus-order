@@ -4,18 +4,20 @@ import {
   ForbiddenException,
   NotFoundException,
   BadRequestException,
+  Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotifyService } from '../notify/notify.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { QueryOrderDto } from './dto/query-order.dto';
-import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
 
 const ALLOWED_TRANSITIONS: Record<string, string[]> = {
   pending: ['paid', 'cancelled'],
-  paid: ['confirmed'],
-  confirmed: ['cooking'],
-  cooking: ['ready'],
-  ready: ['picked'],
+  paid: ['confirmed', 'refunding'],
+  confirmed: ['cooking', 'refunding'],
+  cooking: ['ready', 'refunding'],
+  ready: ['picked', 'refunding'],
+  refunding: ['refunded'],
 };
 
 /** Generate order number: YYYYMMDD + 10 random digits */
@@ -34,13 +36,21 @@ function generateOrderNo(): string {
 function formatSpecName(specs: any): string {
   if (!specs) return '';
   if (typeof specs === 'string') return specs;
+  if (Array.isArray(specs)) {
+    return specs.map((s: any) => s.value).join('/');
+  }
   const entries = Object.entries(specs as Record<string, any>);
   return entries.map(([, v]) => v).join('/');
 }
 
 @Injectable()
 export class OrderService {
-  constructor(private prisma: PrismaService) {}
+  private readonly logger = new Logger(OrderService.name);
+
+  constructor(
+    private prisma: PrismaService,
+    private notify: NotifyService,
+  ) {}
 
   /** Create an order from cart items */
   async create(userId: string, tenantId: string, dto: CreateOrderDto) {
@@ -124,9 +134,7 @@ export class OrderService {
           },
         });
         if (result.count === 0) {
-          throw new ConflictException(
-            `SKU ${item.skuId} 库存扣减失败，请重试`,
-          );
+          throw new ConflictException(`SKU ${item.skuId} 库存扣减失败，请重试`);
         }
       }
 
@@ -277,8 +285,8 @@ export class OrderService {
   async updateStatus(
     orderId: string,
     newStatus: string,
-    operatorId: string,
-    reason?: string,
+    _operatorId: string,
+    _reason?: string,
   ) {
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
@@ -333,6 +341,53 @@ export class OrderService {
         status: newStatus,
       },
     });
+
+    // Fire-and-forget: notify user of status change
+    const updatedOrder = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      select: {
+        userId: true,
+        tenantId: true,
+        orderNo: true,
+        totalAmount: true,
+        pickupNo: true,
+        storeId: true,
+      },
+    });
+
+    if (updatedOrder) {
+      if (newStatus === 'ready') {
+        this.notify
+          .notifyOrderReady(updatedOrder.userId, updatedOrder.tenantId, {
+            orderNo: updatedOrder.orderNo,
+            pickupNo: updatedOrder.pickupNo ?? undefined,
+            store: { name: '校园订餐' },
+          })
+          .catch((err) =>
+            this.logger.error(
+              `[Notify] 备餐完成通知发送失败: ${(err as Error).message}`,
+            ),
+          );
+      } else if (newStatus === 'cancelled' && _reason) {
+        // Merchant cancelled with reason — notify user
+        this.notify
+          .sendSubscribeMessage(
+            updatedOrder.userId,
+            updatedOrder.tenantId,
+            'group_failed', // Reuse group_failed template for order cancelled
+            {
+              thing1: updatedOrder.orderNo,
+              thing2: _reason,
+              phrase3: '已取消',
+            },
+          )
+          .catch((err) =>
+            this.logger.error(
+              `[Notify] 订单取消通知发送失败: ${(err as Error).message}`,
+            ),
+          );
+      }
+    }
 
     // Fetch and return updated order
     return this.prisma.order.findUnique({
@@ -428,6 +483,69 @@ export class OrderService {
     return cartItems;
   }
 
+  /** User requests a refund (C-end). Creates RefundRecord for merchant approval. */
+  async requestRefund(
+    orderId: string,
+    userId: string,
+    items?: { orderItemId: string; quantity: number }[],
+    reason?: string,
+  ) {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      include: { items: true },
+    });
+
+    if (!order) throw new NotFoundException('订单不存在');
+    if (order.userId !== userId) throw new ForbiddenException('无权操作该订单');
+
+    // Only allow refund for paid/confirmed/cooking/ready/picked statuses
+    const refundableStatuses = [
+      'paid',
+      'confirmed',
+      'cooking',
+      'ready',
+      'picked',
+    ];
+    if (!refundableStatuses.includes(order.status)) {
+      throw new BadRequestException('当前订单状态不支持退款');
+    }
+
+    // Check max refund attempts
+    const existingRefunds = await this.prisma.refundRecord.count({
+      where: { orderId },
+    });
+    if (existingRefunds >= 2) {
+      throw new BadRequestException('退款申请已达上限（2次）');
+    }
+
+    // Calculate refund amount (full or partial)
+    const refundItems = items?.length
+      ? order.items.filter((oi) => items.some((r) => r.orderItemId === oi.id))
+      : order.items;
+    const refundAmount = refundItems.reduce(
+      (sum, oi) => sum + oi.price * oi.quantity,
+      0,
+    );
+
+    const refund = await this.prisma.refundRecord.create({
+      data: {
+        orderId,
+        amount: refundAmount,
+        reason: reason || '用户申请退款',
+        status: 'pending',
+        paymentId: order.id, // Link to payment record if available
+      },
+    });
+
+    // Update order status to refunding
+    await this.prisma.order.update({
+      where: { id: orderId },
+      data: { status: 'refunding' },
+    });
+
+    return refund;
+  }
+
   /** Add urge tag to order */
   async urge(orderId: string, userId: string) {
     const order = await this.prisma.order.findUnique({
@@ -464,44 +582,53 @@ export class OrderService {
     });
   }
 
-  /** Batch confirm orders (paid → confirmed) */
-  async batchConfirm(
-    storeId: string,
-    orderIds: string[],
-    operatorId: string,
-  ) {
+  /** Batch confirm orders (paid → confirmed) with transaction */
+  async batchConfirm(storeId: string, orderIds: string[], operatorId: string) {
     const results: any[] = [];
     const errors: any[] = [];
 
-    for (const orderId of orderIds) {
-      try {
-        const order = await this.prisma.order.findUnique({
-          where: { id: orderId },
-        });
-
-        if (!order || order.storeId !== storeId) {
-          errors.push({ orderId, error: '订单不存在或不属于该门店' });
-          continue;
-        }
-
-        if (order.status !== 'paid') {
-          errors.push({
-            orderId,
-            error: `订单状态为 ${order.status}，无法接单`,
+    // Process in transaction for atomicity
+    await this.prisma.$transaction(async (tx) => {
+      for (const orderId of orderIds) {
+        try {
+          const order = await tx.order.findUnique({
+            where: { id: orderId },
           });
-          continue;
-        }
 
-        const result = await this.updateStatus(
-          orderId,
-          'confirmed',
-          operatorId,
-        );
-        results.push(result);
-      } catch (err: any) {
-        errors.push({ orderId, error: err.message });
+          if (!order || order.storeId !== storeId) {
+            errors.push({ orderId, error: '订单不存在或不属于该门店' });
+            continue;
+          }
+
+          if (order.status !== 'paid') {
+            errors.push({
+              orderId,
+              error: `订单状态为 ${order.status}，无法接单`,
+            });
+            continue;
+          }
+
+          // Update with optimistic lock inside transaction
+          const result = await tx.order.updateMany({
+            where: { id: orderId, version: order.version, status: 'paid' },
+            data: { status: 'confirmed', version: { increment: 1 } },
+          });
+
+          if (result.count === 0) {
+            errors.push({ orderId, error: '订单已被修改，请刷新后重试' });
+            continue;
+          }
+
+          await tx.orderTimeline.create({
+            data: { orderId, status: 'confirmed' },
+          });
+
+          results.push({ orderId, status: 'confirmed' });
+        } catch (err: any) {
+          errors.push({ orderId, error: err.message });
+        }
       }
-    }
+    });
 
     return { results, errors };
   }
@@ -565,7 +692,7 @@ export class OrderService {
       },
     });
 
-    // If approved, restore stock
+    // If approved, restore stock and notify user
     if (approved) {
       const order = await this.prisma.order.findUnique({
         where: { id: orderId },
@@ -583,6 +710,18 @@ export class OrderService {
             }),
           ),
         );
+
+        // Fire-and-forget: notify user of refund approval
+        this.notify
+          .notifyRefundApproved(order.userId, order.tenantId, {
+            orderNo: order.orderNo,
+            totalAmount: refund.amount,
+          })
+          .catch((err) =>
+            this.logger.error(
+              `[Notify] 退款通知发送失败: ${(err as Error).message}`,
+            ),
+          );
       }
     }
 
@@ -590,7 +729,7 @@ export class OrderService {
   }
 
   /** Merchant: get order detail */
-  async findOneForMerchant(orderId: string, tenantId: string) {
+  async findOneForMerchant(orderId: string, _tenantId: string) {
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
       include: {
@@ -598,7 +737,9 @@ export class OrderService {
         timeline: { orderBy: { timestamp: 'asc' } },
         payments: true,
         refunds: true,
-        user: { select: { id: true, nickname: true, avatar: true, phone: true } },
+        user: {
+          select: { id: true, nickname: true, avatar: true, phone: true },
+        },
       },
     });
 

@@ -6,8 +6,20 @@ import { useAppStore } from '@/stores/app';
 const authStore = useAuthStore();
 const appStore = useAppStore();
 
+// 默认 AppID（开发环境），生产环境从微信账号信息获取
+const DEFAULT_APP_ID = 'wx8ebfaf4a045bf7c3';
+
 onLaunch(async () => {
   console.log('[App] onLaunch');
+
+  // 确保 appId 已存储（品牌配置请求需要 x-app-id header）
+  if (!uni.getStorageSync('appId')) {
+    // 尝试从微信获取小程序 AppID
+    const accountInfo = uni.getAccountInfoSync?.();
+    const appId = accountInfo?.miniProgram?.appId || DEFAULT_APP_ID;
+    uni.setStorageSync('appId', appId);
+    console.log('[App] AppID:', appId);
+  }
 
   // 加载品牌配置
   try {
@@ -15,6 +27,9 @@ onLaunch(async () => {
   } catch (e) {
     console.warn('[App] 品牌配置加载失败，使用默认配置');
   }
+
+  // 加载模块信息
+  appStore.loadModules();
 
   // 检查登录状态
   const token = uni.getStorageSync('token');
@@ -26,12 +41,14 @@ onLaunch(async () => {
       uni.removeStorageSync('token');
     }
   } else {
-    // 自动登录
-    try {
-      await authStore.login();
-    } catch (e) {
-      console.warn('[App] 自动登录失败');
-    }
+    // 自动登录 — 放到下一个事件循环，不阻塞 onLaunch
+    setTimeout(async () => {
+      try {
+        await authStore.login();
+      } catch (e) {
+        console.warn('[App] 自动登录失败（可忽略，不影响浏览）');
+      }
+    }, 100);
   }
 });
 

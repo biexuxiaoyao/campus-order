@@ -1,12 +1,16 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotifyService } from '../notify/notify.service';
 
 @Injectable()
 export class ScheduleService {
   private readonly logger = new Logger(ScheduleService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notify: NotifyService,
+  ) {}
 
   /**
    * Every 1 minute: Cancel orders with status='pending' that are older than 15 minutes.
@@ -28,7 +32,9 @@ export class ScheduleService {
       });
 
       if (expiredOrders.length === 0) {
-        this.logger.log('[handlePaymentTimeout] No expired pending orders found.');
+        this.logger.log(
+          '[handlePaymentTimeout] No expired pending orders found.',
+        );
         return;
       }
 
@@ -77,6 +83,30 @@ export class ScheduleService {
           });
 
           cancelledCount++;
+
+          // Fire-and-forget: notify user of payment timeout cancellation
+          const fullOrder = await this.prisma.order.findUnique({
+            where: { id: order.id },
+            select: { userId: true, tenantId: true, orderNo: true },
+          });
+          if (fullOrder) {
+            this.notify
+              .sendSubscribeMessage(
+                fullOrder.userId,
+                fullOrder.tenantId,
+                'order_paid',
+                {
+                  thing1: fullOrder.orderNo,
+                  amount2: '0.00 元',
+                  thing3: '支付超时已取消',
+                },
+              )
+              .catch((err) =>
+                this.logger.error(
+                  `[Notify] 支付超时取消通知发送失败: ${(err as Error).message}`,
+                ),
+              );
+          }
         } catch (err) {
           this.logger.error(
             `[handlePaymentTimeout] Failed to cancel order ${order.id}: ${(err as Error).message}`,
@@ -100,7 +130,9 @@ export class ScheduleService {
    */
   @Cron('*/1 * * * *')
   async handlePaymentCallbackCompensation(): Promise<void> {
-    this.logger.log('[handlePaymentCallbackCompensation] Starting compensation check...');
+    this.logger.log(
+      '[handlePaymentCallbackCompensation] Starting compensation check...',
+    );
 
     try {
       const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
@@ -114,7 +146,9 @@ export class ScheduleService {
       });
 
       if (pendingOrders.length === 0) {
-        this.logger.log('[handlePaymentCallbackCompensation] No pending orders in last 5 minutes.');
+        this.logger.log(
+          '[handlePaymentCallbackCompensation] No pending orders in last 5 minutes.',
+        );
         return;
       }
 
@@ -141,7 +175,9 @@ export class ScheduleService {
    */
   @Cron('0 3 * * *')
   async handlePointsExpiration(): Promise<void> {
-    this.logger.log('[handlePointsExpiration] Starting points expiration check...');
+    this.logger.log(
+      '[handlePointsExpiration] Starting points expiration check...',
+    );
 
     try {
       const now = new Date();
@@ -168,13 +204,14 @@ export class ScheduleService {
           const totalExpiredEarn = item._sum.points || 0;
 
           // Find total already-processed expire transactions for this account
-          const alreadyExpiredResult = await this.prisma.pointsTransaction.aggregate({
-            where: {
-              accountId: item.accountId,
-              type: 'expire',
-            },
-            _sum: { points: true },
-          });
+          const alreadyExpiredResult =
+            await this.prisma.pointsTransaction.aggregate({
+              where: {
+                accountId: item.accountId,
+                type: 'expire',
+              },
+              _sum: { points: true },
+            });
 
           const alreadyExpired = alreadyExpiredResult._sum.points || 0;
           const toExpire = totalExpiredEarn - alreadyExpired;
@@ -230,7 +267,9 @@ export class ScheduleService {
    */
   @Cron('*/1 * * * *')
   async handleDishScheduledPublish(): Promise<void> {
-    this.logger.log('[handleDishScheduledPublish] Starting scheduled dish publish check...');
+    this.logger.log(
+      '[handleDishScheduledPublish] Starting scheduled dish publish check...',
+    );
 
     try {
       const now = new Date();
@@ -269,7 +308,9 @@ export class ScheduleService {
    */
   @Cron('0 22 * * *')
   async handleEndOfDayComplete(): Promise<void> {
-    this.logger.log('[handleEndOfDayComplete] Starting end-of-day order completion...');
+    this.logger.log(
+      '[handleEndOfDayComplete] Starting end-of-day order completion...',
+    );
 
     try {
       const result = await this.prisma.order.updateMany({
@@ -283,6 +324,95 @@ export class ScheduleService {
     } catch (err) {
       this.logger.error(
         `[handleEndOfDayComplete] Fatal error: ${(err as Error).message}`,
+      );
+    }
+  }
+
+  /**
+   * Daily at 8am: Notify users of coupons expiring within 3 days.
+   */
+  @Cron('0 8 * * *')
+  async handleCouponExpirationNotify(): Promise<void> {
+    this.logger.log(
+      '[handleCouponExpirationNotify] Starting coupon expiration check...',
+    );
+
+    try {
+      const threeDaysFromNow = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
+
+      // Find coupons expiring within 3 days that are still available
+      const expiringCoupons = await this.prisma.userCoupon.findMany({
+        where: {
+          status: 'available',
+          template: {
+            endAt: { not: null, lte: threeDaysFromNow, gt: new Date() },
+          },
+        },
+        include: {
+          template: { select: { name: true, endAt: true } },
+        },
+      });
+
+      if (expiringCoupons.length === 0) {
+        this.logger.log(
+          '[handleCouponExpirationNotify] No expiring coupons found.',
+        );
+        return;
+      }
+
+      // Group by userId to avoid duplicate notifications
+      const userCouponMap = new Map<
+        string,
+        { userId: string; tenantId: string; coupons: string[] }
+      >();
+
+      for (const uc of expiringCoupons) {
+        // Need to get tenantId from the User record
+        const user = await this.prisma.user.findUnique({
+          where: { id: uc.userId },
+          select: { tenantId: true },
+        });
+        if (!user) continue;
+
+        const key = uc.userId;
+        if (!userCouponMap.has(key)) {
+          userCouponMap.set(key, {
+            userId: uc.userId,
+            tenantId: user.tenantId,
+            coupons: [],
+          });
+        }
+        userCouponMap
+          .get(key)!
+          .coupons.push(
+            `${uc.template.name}(${uc.template.endAt!.toISOString().slice(0, 10)}到期)`,
+          );
+      }
+
+      let notifiedCount = 0;
+      for (const [, info] of userCouponMap) {
+        const couponList = info.coupons.slice(0, 3).join('、');
+        const displayName =
+          info.coupons.length > 3
+            ? `${couponList}等${info.coupons.length}张`
+            : couponList;
+
+        await this.notify
+          .notifyCouponExpiring([info.userId], info.tenantId, displayName, '')
+          .catch((err) =>
+            this.logger.error(
+              `[Notify] 优惠券过期通知发送失败 (userId=${info.userId}): ${(err as Error).message}`,
+            ),
+          );
+        notifiedCount++;
+      }
+
+      this.logger.log(
+        `[handleCouponExpirationNotify] Completed. Notified ${notifiedCount} users about expiring coupons.`,
+      );
+    } catch (err) {
+      this.logger.error(
+        `[handleCouponExpirationNotify] Fatal error: ${(err as Error).message}`,
       );
     }
   }

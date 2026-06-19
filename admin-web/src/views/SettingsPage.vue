@@ -110,6 +110,8 @@ async function handleSave() {
       closeTime: form.closeTime,
       paused: form.paused,
       printerConfig: form.printerConfig,
+      printerSN: form.printerSN,
+      printerKey: form.printerKey,
     })
     ElMessage.success('保存成功')
   } catch {

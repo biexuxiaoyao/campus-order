@@ -57,7 +57,7 @@ export class CategoryController {
   @Delete('categories/:id')
   async remove(
     @Param('id') id: string,
-    @Headers('x-tenant-id') tenantId: string,
+    @Headers('x-tenant-id') _tenantId: string,
   ) {
     return this.category.remove(id);
   }

@@ -23,59 +23,55 @@ export class OrderController {
   constructor(private orderService: OrderService) {}
 
   @Post('orders')
-  async create(
-    @Req() req: any,
-    @Headers('x-tenant-id') tenantId: string,
-    @Body() dto: CreateOrderDto,
-  ) {
+  async create(@Req() req: any, @Body() dto: CreateOrderDto) {
     const userId = req.user?.userId;
+    const tenantId = req.tenantId;
     return this.orderService.create(userId, tenantId, dto);
   }
 
   @Get('orders')
-  async findAll(
-    @Req() req: any,
-    @Headers('x-tenant-id') tenantId: string,
-    @Query() query: QueryOrderDto,
-  ) {
+  async findAll(@Req() req: any, @Query() query: QueryOrderDto) {
     const userId = req.user?.userId;
+    const tenantId = req.tenantId;
     return this.orderService.findAll(tenantId, userId, query);
   }
 
   @Get('orders/:id')
-  async findOne(
-    @Req() req: any,
-    @Param('id') id: string,
-  ) {
+  async findOne(@Req() req: any, @Param('id') id: string) {
     const userId = req.user?.userId;
     return this.orderService.findOne(id, userId);
   }
 
   @Post('orders/:id/cancel')
-  async cancel(
-    @Req() req: any,
-    @Param('id') id: string,
-  ) {
+  async cancel(@Req() req: any, @Param('id') id: string) {
     const userId = req.user?.userId;
     return this.orderService.cancel(id, userId);
   }
 
   @Post('orders/:id/reorder')
-  async reorder(
-    @Req() req: any,
-    @Param('id') id: string,
-  ) {
+  async reorder(@Req() req: any, @Param('id') id: string) {
     const userId = req.user?.userId;
     return this.orderService.reorder(id, userId);
   }
 
   @Post('orders/:id/urge')
-  async urge(
-    @Req() req: any,
-    @Param('id') id: string,
-  ) {
+  async urge(@Req() req: any, @Param('id') id: string) {
     const userId = req.user?.userId;
     return this.orderService.urge(id, userId);
+  }
+
+  @Post('orders/:id/refund')
+  async requestRefund(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body()
+    body: {
+      items?: { orderItemId: string; quantity: number }[];
+      reason?: string;
+    },
+  ) {
+    const userId = req.user?.userId;
+    return this.orderService.requestRefund(id, userId, body.items, body.reason);
   }
 }
 

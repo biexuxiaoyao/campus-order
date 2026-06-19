@@ -27,6 +27,37 @@ async function main() {
   });
   console.log(`✅ Tenant: ${tenant.name}`);
 
+  // ========== V1.0 Modules (9 active) ==========
+  // Pricing: SaaS年费 / 源码一次性
+  // Tier mapping: basic=base | pro=base+5 | enterprise=all9
+  const moduleDefs = [
+    // ── 基础版(1模块) ──
+    { id: 'base',          name: '基础模块',   version: '1.0.0', priceYearly: 1999, priceSourceCode:  800000 },
+    // ── 专业版增加(4模块) ──
+    { id: 'group-meal',    name: '团体订餐',   version: '1.0.0', priceYearly: 1500, priceSourceCode: 1180000 },
+    { id: 'discount',      name: '折扣引擎',   version: '1.0.0', priceYearly: 1200, priceSourceCode:  500000 },
+    { id: 'points',        name: '积分系统',   version: '1.0.0', priceYearly: 1200, priceSourceCode:  400000 },
+    { id: 'coupon',        name: '优惠券',     version: '1.0.0', priceYearly: 1200, priceSourceCode:  500000 },
+    // ── 企业版增加(4模块) ──
+    { id: 'prepaid',       name: '预充值',     version: '1.0.0', priceYearly: 1000, priceSourceCode:  600000 },
+    { id: 'printer',       name: '小票打印',   version: '1.0.0', priceYearly:  800, priceSourceCode:  300000 },
+    { id: 'push-notify',   name: '消息推送',   version: '1.0.0', priceYearly: 1000, priceSourceCode:  200000 },
+    { id: 'advanced-stats',name: '高级报表',   version: '1.0.0', priceYearly: 1500, priceSourceCode:  500000 },
+    // ── V2.0 预留(2模块, 不计入V1定价) ──
+    { id: 'dine-in',       name: '堂食点餐',   version: '2.0.0', priceYearly: 2000, priceSourceCode:  300000 },
+    { id: 'delivery',      name: '外卖配送',   version: '2.0.0', priceYearly: 2000, priceSourceCode:  500000 },
+  ];
+  for (const mod of moduleDefs) {
+    await prisma.module.upsert({ where: { id: mod.id }, update: {}, create: mod });
+  }
+  // Assign base module to demo tenant
+  await prisma.tenantModule.upsert({
+    where: { tenantId_moduleId: { tenantId: tenant.id, moduleId: 'base' } },
+    update: {},
+    create: { tenantId: tenant.id, moduleId: 'base', status: 'active' },
+  });
+  console.log(`✅ ${moduleDefs.length} Modules (base assigned to demo tenant)`);
+
   // Brand Config
   await prisma.brandConfig.upsert({
     where: { tenantId: tenant.id },

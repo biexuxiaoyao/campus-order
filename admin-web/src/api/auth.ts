@@ -14,7 +14,8 @@ export interface UserInfo {
   id: number
   username: string
   role: string
-  avatar?: string
+  tenantId: string
+  modules?: string[]
 }
 
 export function login(params: LoginParams): Promise<LoginResult> {

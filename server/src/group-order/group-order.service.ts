@@ -3,8 +3,10 @@ import {
   NotFoundException,
   BadRequestException,
   ForbiddenException,
+  Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotifyService } from '../notify/notify.service';
 import { CreateGroupOrderDto } from './dto/create-group-order.dto';
 import { JoinGroupOrderDto } from './dto/join-group-order.dto';
 import { RepresentOrderDto } from './dto/represent-order.dto';
@@ -23,7 +25,12 @@ function generateGroupNo(): string {
 
 @Injectable()
 export class GroupOrderService {
-  constructor(private prisma: PrismaService) {}
+  private readonly logger = new Logger(GroupOrderService.name);
+
+  constructor(
+    private prisma: PrismaService,
+    private notify: NotifyService,
+  ) {}
 
   /** Create a pooling group order */
   async createPool(
@@ -113,11 +120,7 @@ export class GroupOrderService {
   }
 
   /** Join a pooling group order with items */
-  async joinPool(
-    groupOrderId: string,
-    userId: string,
-    dto: JoinGroupOrderDto,
-  ) {
+  async joinPool(groupOrderId: string, userId: string, dto: JoinGroupOrderDto) {
     const groupOrder = await this.prisma.groupOrder.findUnique({
       where: { id: groupOrderId },
     });
@@ -246,6 +249,31 @@ export class GroupOrderService {
         },
       },
     });
+
+    // Fire-and-forget: notify leader and all participants
+    const success = newStatus === 'success';
+    const participantIds = new Set([
+      updated.leaderId,
+      ...updated.items.map((i) => i.userId),
+    ]);
+
+    for (const userId of participantIds) {
+      this.notify
+        .notifyGroupResult(
+          userId,
+          updated.tenantId,
+          {
+            groupNo: updated.groupNo,
+            storeName: '校园订餐',
+          },
+          success,
+        )
+        .catch((err) =>
+          this.logger.error(
+            `[Notify] 团单结果通知发送失败 (userId=${userId}): ${(err as Error).message}`,
+          ),
+        );
+    }
 
     return updated;
   }

@@ -12,6 +12,9 @@ const KNOWN_MODULE_IDS = [
   'coupon',
   'printer',
   'push-notify',
+  'advanced-stats',
+  'dine-in',
+  'delivery',
 ];
 
 /**
@@ -115,6 +118,9 @@ export function getModuleDirectories(moduleId: string): string[] {
     coupon: ['src/coupon/'],
     printer: ['src/printer/'],
     'push-notify': ['src/notify/'],
+    'advanced-stats': [], // analytics module, no dedicated server directory
+    'dine-in': [],        // V2 — no server code yet
+    'delivery': [],       // V2 — no server code yet
     base: [], // base module has no dedicated directory – it is the core
   };
 

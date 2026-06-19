@@ -1,10 +1,4 @@
-import {
-  IsString,
-  IsIn,
-  IsInt,
-  IsOptional,
-  IsDate,
-} from 'class-validator';
+import { IsString, IsIn, IsInt, IsOptional, IsDate } from 'class-validator';
 import { Type } from 'class-transformer';
 
 /**

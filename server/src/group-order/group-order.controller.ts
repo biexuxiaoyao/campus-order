@@ -1,14 +1,5 @@
 import {
-  Controller,
-  Get,
-  Post,
-  Put,
-  Body,
-  Param,
-  Query,
-  Headers,
-  Req,
-  UseGuards,
+  Controller, Get, Post, Put, Body, Param, Query, Req, UseGuards,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { GroupOrderService } from './group-order.service';
@@ -23,11 +14,8 @@ export class GroupOrderController {
 
   /** List active pools for a store */
   @Get('group-orders')
-  async listPools(
-    @Headers('x-tenant-id') tenantId: string,
-    @Query('storeId') storeId: string,
-  ) {
-    return this.groupOrderService.getPool(tenantId, storeId);
+  async listPools(@Req() req: any, @Query('storeId') storeId: string) {
+    return this.groupOrderService.getPool(req.tenantId, storeId);
   }
 
   /** Get group order detail */
@@ -39,47 +27,31 @@ export class GroupOrderController {
   /** Create a pooling group order */
   @Post('group-orders')
   @UseGuards(AuthGuard('jwt'))
-  async createPool(
-    @Req() req: any,
-    @Headers('x-tenant-id') tenantId: string,
-    @Body() dto: CreateGroupOrderDto,
-  ) {
+  async createPool(@Req() req: any, @Body() dto: CreateGroupOrderDto) {
     const leaderId = req.user?.userId;
-    return this.groupOrderService.createPool(leaderId, tenantId, dto);
+    return this.groupOrderService.createPool(leaderId, req.tenantId, dto);
   }
 
   /** Join a pooling group order */
   @Post('group-orders/:id/join')
   @UseGuards(AuthGuard('jwt'))
   async joinPool(
-    @Req() req: any,
-    @Param('id') id: string,
-    @Body() dto: JoinGroupOrderDto,
+    @Req() req: any, @Param('id') id: string, @Body() dto: JoinGroupOrderDto,
   ) {
-    const userId = req.user?.userId;
-    return this.groupOrderService.joinPool(id, userId, dto);
+    return this.groupOrderService.joinPool(id, req.user?.userId, dto);
   }
 
   /** Close a pooling group order (leader only) */
   @Put('group-orders/:id/close')
   @UseGuards(AuthGuard('jwt'))
-  async closePool(
-    @Req() req: any,
-    @Param('id') id: string,
-  ) {
-    const leaderId = req.user?.userId;
-    return this.groupOrderService.closePool(id, leaderId);
+  async closePool(@Req() req: any, @Param('id') id: string) {
+    return this.groupOrderService.closePool(id, req.user?.userId);
   }
 
   /** Create a represent order (leader orders on behalf of others) */
   @Post('group-orders/represent')
   @UseGuards(AuthGuard('jwt'))
-  async representOrder(
-    @Req() req: any,
-    @Headers('x-tenant-id') tenantId: string,
-    @Body() dto: RepresentOrderDto,
-  ) {
-    const leaderId = req.user?.userId;
-    return this.groupOrderService.representOrder(leaderId, tenantId, dto);
+  async representOrder(@Req() req: any, @Body() dto: RepresentOrderDto) {
+    return this.groupOrderService.representOrder(req.user?.userId, req.tenantId, dto);
   }
 }

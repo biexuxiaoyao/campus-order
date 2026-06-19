@@ -1,0 +1,28 @@
+:root {
+  --b-bg: #f5f5f5;
+  --b-surface: #ffffff;
+  --b-sidebar: #fafafa;
+  --b-fg: #1f2937;
+  --b-muted: #9ca3af;
+  --b-border: #f0f0f0;
+  --b-accent: #ff6b35;
+  --b-accent-hover: #e55d2b;
+  --b-success: #22c55e;
+  --b-warning: #f59e0b;
+  --b-danger: #ef4444;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+}
+
+/* Element Plus 主题覆盖 */
+:root {
+  --el-color-primary: #ff6b35;
+  --el-color-primary-light-3: #ff8c5f;
+  --el-color-primary-light-5: #ffab85;
+  --el-color-primary-light-7: #ffc9b3;
+  --el-color-primary-light-8: #ffe0d1;
+  --el-color-primary-light-9: #fff0e8;
+  --el-color-primary-dark-2: #e55d2b;
+  --el-border-radius-base: 8px;
+  --el-border-radius-small: 4px;
+}

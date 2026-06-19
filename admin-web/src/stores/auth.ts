@@ -14,6 +14,7 @@ export const useAuthStore = defineStore('auth', () => {
       token.value = result.token
       user.value = result.user
       localStorage.setItem('token', result.token)
+      localStorage.setItem('user', JSON.stringify(result.user))
       if (result.user.tenantId) {
         localStorage.setItem('tenantId', result.user.tenantId)
       }
@@ -28,6 +29,7 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       const info = await getUserInfo()
       user.value = info
+      localStorage.setItem('user', JSON.stringify(info))
     } catch {
       logout()
     }
@@ -37,6 +39,7 @@ export const useAuthStore = defineStore('auth', () => {
     token.value = ''
     user.value = null
     localStorage.removeItem('token')
+    localStorage.removeItem('user')
     localStorage.removeItem('tenantId')
     router.push('/login')
   }

@@ -1,0 +1,35 @@
+:root {
+  --p-bg: #f0f2f5;
+  --p-surface: #ffffff;
+  --p-sidebar: #1a1a2e;
+  --p-sidebar-hover: #16213e;
+  --p-sidebar-active: #0f3460;
+  --p-fg: #1a1a2e;
+  --p-muted: #6b7280;
+  --p-border: #e5e7eb;
+  --p-accent: #4a90d9;
+  --p-accent-hover: #3a7bc8;
+  --p-success: #10b981;
+  --p-warning: #f59e0b;
+  --p-danger: #ef4444;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+}
+
+/* Element Plus theme override */
+:root {
+  --el-color-primary: #4a90d9;
+  --el-color-primary-light-3: #6ba5e0;
+  --el-color-primary-light-5: #8dbae8;
+  --el-color-primary-light-7: #b0d0f0;
+  --el-color-primary-light-8: #c8ddf4;
+  --el-color-primary-light-9: #e0edf8;
+  --el-color-primary-dark-2: #3a7bc8;
+  --el-border-radius-base: 8px;
+}
+
+body {
+  font-family: Inter, system-ui, -apple-system, sans-serif;
+  background: var(--p-bg);
+  margin: 0;
+}

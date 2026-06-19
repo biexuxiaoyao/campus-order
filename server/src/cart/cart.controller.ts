@@ -6,7 +6,6 @@ import {
   Delete,
   Body,
   Param,
-  Headers,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -22,21 +21,14 @@ export class CartController {
 
   /** 获取购物车 */
   @Get()
-  async getCart(
-    @Req() req: any,
-    @Headers('x-tenant-id') tenantId: string,
-  ) {
-    return this.cart.getCart(req.user.userId, tenantId);
+  async getCart(@Req() req: any) {
+    return this.cart.getCart(req.user.userId, req.tenantId);
   }
 
   /** 添加商品到购物车 */
   @Post('items')
-  async addItem(
-    @Req() req: any,
-    @Headers('x-tenant-id') tenantId: string,
-    @Body() dto: AddCartItemDto,
-  ) {
-    return this.cart.addItem(req.user.userId, tenantId, dto);
+  async addItem(@Req() req: any, @Body() dto: AddCartItemDto) {
+    return this.cart.addItem(req.user.userId, req.tenantId, dto);
   }
 
   /** 修改购物车项数量 */
@@ -51,10 +43,7 @@ export class CartController {
 
   /** 删除购物车项 */
   @Delete('items/:id')
-  async removeItem(
-    @Req() req: any,
-    @Param('id') id: string,
-  ) {
+  async removeItem(@Req() req: any, @Param('id') id: string) {
     return this.cart.removeItem(req.user.userId, id);
   }
 

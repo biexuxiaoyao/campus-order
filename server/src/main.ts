@@ -16,15 +16,24 @@ async function bootstrap() {
   });
 
   // 全局校验管道
-  app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+  app.useGlobalPipes(new ValidationPipe({
+    transform: true,
+  }));
 
   // CORS - 仅允许已配置的域名
   app.enableCors({
-    origin: process.env.NODE_ENV === 'production'
-      ? ['https://admin.ourplatform.com'] // 管理后台域名
-      : '*',
+    origin:
+      process.env.NODE_ENV === 'production'
+        ? ['https://admin.ourplatform.com'] // 管理后台域名
+        : '*',
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'x-app-id', 'x-tenant-id', 'x-requested-with'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'x-app-id',
+      'x-tenant-id',
+      'x-requested-with',
+    ],
   });
 
   await app.listen(process.env.PORT ?? 3000);

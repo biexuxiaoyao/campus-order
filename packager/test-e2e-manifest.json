@@ -1,0 +1,17 @@
+{
+  "version": "1.0.0",
+  "tenantId": "test-merchant-001",
+  "watermarkId": "wm_e2e_001",
+  "targetDir": "../server",
+  "outputDir": "../delivery-test/server",
+  "modules": [
+    { "id": "base",        "name": "基础模块",   "purchased": true },
+    { "id": "group-meal",  "name": "团体订餐",   "purchased": true },
+    { "id": "discount",    "name": "折扣引擎",   "purchased": true },
+    { "id": "coupon",      "name": "优惠券",     "purchased": true },
+    { "id": "prepaid",     "name": "预充值",     "purchased": false },
+    { "id": "points",      "name": "积分系统",   "purchased": false },
+    { "id": "printer",     "name": "小票打印",   "purchased": false },
+    { "id": "push-notify", "name": "消息推送",   "purchased": false }
+  ]
+}

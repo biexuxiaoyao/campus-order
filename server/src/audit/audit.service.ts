@@ -37,7 +37,15 @@ export class AuditService {
    * 分页查询审计日志
    */
   async query(tenantId: string, dto: QueryAuditLogDto) {
-    const { operatorId, action, targetType, startDate, endDate, page, pageSize } = dto;
+    const {
+      operatorId,
+      action,
+      targetType,
+      startDate,
+      endDate,
+      page,
+      pageSize,
+    } = dto;
 
     const where: any = { tenantId };
 

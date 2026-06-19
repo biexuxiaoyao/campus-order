@@ -1,4 +1,8 @@
-import { Injectable, ConflictException, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  ConflictException,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateSkuDto } from './dto/create-sku.dto';
@@ -49,7 +53,7 @@ export class SkuService {
         availableStock: dto.availableStock,
         status: dto.status,
         specs: dto.specs as unknown as Prisma.InputJsonValue,
-      } as Prisma.SkuUpdateInput,
+      },
     });
   }
 
@@ -84,7 +88,12 @@ export class SkuService {
   }
 
   async batchUpdateStock(
-    items: { id: string; stock: number; availableStock: number; version: number }[],
+    items: {
+      id: string;
+      stock: number;
+      availableStock: number;
+      version: number;
+    }[],
   ) {
     return this.prisma.$transaction(async (tx) => {
       const results: unknown[] = [];
@@ -133,7 +142,9 @@ export class SkuService {
   }
 
   async findTemplateById(id: string) {
-    const template = await this.prisma.specTemplate.findUnique({ where: { id } });
+    const template = await this.prisma.specTemplate.findUnique({
+      where: { id },
+    });
     if (!template) {
       throw new NotFoundException('规格模板不存在');
     }
@@ -147,7 +158,7 @@ export class SkuService {
       data: {
         name: dto.name,
         options: dto.options as unknown as Prisma.InputJsonValue,
-      } as Prisma.SpecTemplateUpdateInput,
+      },
     });
   }
 

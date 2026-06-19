@@ -14,6 +14,15 @@
 | [MODULES.md](MODULES.md) | 模块系统、依赖关系、权限矩阵 | 搭建模块框架时必读 |
 | [V1-SCOPE.md](V1-SCOPE.md) | V1.0 范围清单、in/out 明细 | 排期和裁剪时必读 |
 
+### 测试文档
+
+| 文档 | 内容 | 读者 |
+|---|---|---|
+| [QA-TEST-SPEC.md](QA-TEST-SPEC.md) | QA 测试说明书 (~198 用例) | 人类 QA |
+| [E2E-TEST-SPEC.md](E2E-TEST-SPEC.md) | 端到端场景用例 (P→B→C 时序, 68 用例) | 人类 QA |
+| [AGENTIC-TEST-SPEC.md](AGENTIC-TEST-SPEC.md) | Agent 可执行测试规格 (curl + 断言) | Claude Code Agent |
+| [SPEC-RESEARCH-PROMPT.md](SPEC-RESEARCH-PROMPT.md) | Spec 分层与生命周期研究提示词 | 外部大模型 |
+
 ## 技术栈速查
 
 | 层 | 技术 |

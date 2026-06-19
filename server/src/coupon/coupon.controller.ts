@@ -59,10 +59,7 @@ export class CouponController {
   constructor(private coupon: CouponService) {}
 
   @Get('coupons')
-  async getUserCoupons(
-    @Req() req: any,
-    @Query('status') status?: string,
-  ) {
+  async getUserCoupons(@Req() req: any, @Query('status') status?: string) {
     return this.coupon.getUserCoupons(req.user?.userId, status);
   }
 
@@ -75,11 +72,14 @@ export class CouponController {
     return this.coupon.getAvailableForOrder(req.user?.userId, amount);
   }
 
+  /** 可领取的优惠券模板列表 */
+  @Get('coupons/claimable')
+  async getClaimable(@Req() req: any, @Query('storeId') storeId: string) {
+    return this.coupon.getClaimableTemplates(storeId, req.user?.userId);
+  }
+
   @Post('coupons/:id/claim')
-  async claim(
-    @Req() req: any,
-    @Param('id') templateId: string,
-  ) {
+  async claim(@Req() req: any, @Param('id') templateId: string) {
     return this.coupon.claim(req.user?.userId, templateId);
   }
 }

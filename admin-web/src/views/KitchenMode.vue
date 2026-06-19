@@ -6,6 +6,14 @@
         <span>待处理: {{ pendingCount }}</span>
         <span style="margin-left: 20px">制作中: {{ cookingCount }}</span>
         <span style="margin-left: 20px; color: #a0a0b0">刷新 {{ countdown }}s</span>
+        <el-button
+          :type="audioEnabled ? 'primary' : 'info'"
+          size="small"
+          style="margin-left: 16px"
+          @click="audioEnabled = !audioEnabled"
+        >
+          {{ audioEnabled ? '🔊' : '🔇' }}
+        </el-button>
       </div>
     </div>
 
@@ -29,6 +37,21 @@
           </div>
           <div v-if="order.remark" style="color: #f0a040; margin-top: 8px; font-size: 14px">
             备注: {{ order.remark }}
+          </div>
+          <div
+            v-if="order.tags?.urgeCount > 0"
+            style="
+              background: #ff4d4f;
+              color: #fff;
+              border-radius: 20px;
+              padding: 2px 10px;
+              font-size: 13px;
+              font-weight: 700;
+              margin-top: 8px;
+              display: inline-block;
+            "
+          >
+            🔔 催单 ×{{ order.tags.urgeCount }}
           </div>
           <div class="time-badge">
             {{ formatElapsed(order.createdAt) }}
@@ -84,6 +107,11 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getOrders, updateOrderStatus } from '@/api/orders'
+import { useAppStore } from '@/stores/app'
+import { useAudioAlert } from '@/composables/useAudioAlert'
+
+const appStore = useAppStore()
+const { playBeep, enabled: audioEnabled } = useAudioAlert()
 
 const pendingOrders = ref<any[]>([])
 const cookingOrders = ref<any[]>([])
@@ -93,6 +121,8 @@ let countdownTimer: ReturnType<typeof setInterval> | null = null
 
 const pendingCount = ref(0)
 const cookingCount = ref(0)
+let prevPendingCount = 0
+let prevCookingCount = 0
 
 function formatElapsed(time: string): string {
   if (!time) return ''
@@ -109,16 +139,37 @@ async function fetchOrders() {
       startDate: today,
       endDate: today,
       pageSize: 999,
+      storeId: appStore.currentStoreId || undefined,
     })
     const allOrders = res?.list || res?.items || []
-    pendingOrders.value = allOrders.filter(
-      (o: any) => o.status === 'pending' || o.status === 'confirmed',
-    )
-    cookingOrders.value = allOrders.filter(
-      (o: any) => o.status === 'cooking',
-    )
+
+    // Sort urged orders to the top
+    const sortByUrge = (a: any, b: any) => {
+      const urgeA = a.tags?.urgeCount || 0
+      const urgeB = b.tags?.urgeCount || 0
+      if (urgeB !== urgeA) return urgeB - urgeA
+      // Fallback: sort by createdAt ascending (oldest first)
+      return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+    }
+
+    pendingOrders.value = allOrders
+      .filter((o: any) => o.status === 'pending' || o.status === 'confirmed')
+      .sort(sortByUrge)
+    cookingOrders.value = allOrders
+      .filter((o: any) => o.status === 'cooking')
+      .sort(sortByUrge)
     pendingCount.value = pendingOrders.value.length
     cookingCount.value = cookingOrders.value.length
+
+    // Play audio alert if new orders appeared
+    if (
+      pendingCount.value > prevPendingCount ||
+      cookingCount.value > prevCookingCount
+    ) {
+      playBeep()
+    }
+    prevPendingCount = pendingCount.value
+    prevCookingCount = cookingCount.value
   } catch {
     // Show demo data
     pendingOrders.value = []

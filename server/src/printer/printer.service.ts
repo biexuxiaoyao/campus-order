@@ -1,8 +1,4 @@
-import {
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatePrinterDto } from './dto/create-printer.dto';
@@ -91,7 +87,7 @@ export class PrinterService {
   }
 
   /** 检查打印机在线状态 */
-  async getPrintStatus(_printerId: string): Promise<{ online: boolean; message: string }> {
+  getPrintStatus(_printerId: string): { online: boolean; message: string } {
     // TODO: 调用各品牌云打印机状态查询 API
     this.logger.log(`[Printer] 查询打印机状态: ${_printerId}`);
     return { online: true, message: '暂未对接状态查询 API' };
@@ -122,7 +118,10 @@ export class PrinterService {
       store?: { name?: string };
     },
     reprint = false,
-  ): Promise<{ success: boolean; results: { printerId: string; brand: string; sent: boolean }[] }> {
+  ): Promise<{
+    success: boolean;
+    results: { printerId: string; brand: string; sent: boolean }[];
+  }> {
     // 1. 查询门店所有活跃打印机
     const printers = await this.prisma.printer.findMany({
       where: { storeId, status: 'active' },
@@ -141,8 +140,17 @@ export class PrinterService {
 
     for (const printer of printers) {
       try {
-        await this.sendToCloudPrinter(printer.brand, printer.deviceId, printer.apiKey, content);
-        results.push({ printerId: printer.id, brand: printer.brand, sent: true });
+        this.sendToCloudPrinter(
+          printer.brand,
+          printer.deviceId,
+          printer.apiKey,
+          content,
+        );
+        results.push({
+          printerId: printer.id,
+          brand: printer.brand,
+          sent: true,
+        });
         this.logger.log(
           `[Printer] 打印成功 — printer: ${printer.id} (${printer.brand}), order: ${order.orderNo}`,
         );
@@ -151,7 +159,11 @@ export class PrinterService {
         this.logger.error(
           `[Printer] 打印失败 — printer: ${printer.id} (${printer.brand}), error: ${message}`,
         );
-        results.push({ printerId: printer.id, brand: printer.brand, sent: false });
+        results.push({
+          printerId: printer.id,
+          brand: printer.brand,
+          sent: false,
+        });
       }
     }
 
@@ -175,7 +187,10 @@ export class PrinterService {
       }[];
       store?: { name?: string };
     },
-  ): Promise<{ success: boolean; results: { printerId: string; brand: string; sent: boolean }[] }> {
+  ): Promise<{
+    success: boolean;
+    results: { printerId: string; brand: string; sent: boolean }[];
+  }> {
     return this.printOrder(storeId, order, true);
   }
 
@@ -274,12 +289,12 @@ export class PrinterService {
    * 根据品牌调用对应云打印 API
    * 开发环境下仅记录日志
    */
-  private async sendToCloudPrinter(
+  private sendToCloudPrinter(
     brand: string,
     deviceId: string,
     apiKey: string,
     content: string,
-  ): Promise<void> {
+  ): void {
     if (process.env.NODE_ENV === 'development') {
       this.logger.log(
         `[Printer] DEV — 模拟发送打印任务:
@@ -293,13 +308,13 @@ ${content}`,
 
     switch (brand) {
       case 'yilianyun':
-        await this.sendYilianyun(deviceId, apiKey, content);
+        this.sendYilianyun(deviceId, apiKey, content);
         break;
       case 'feie':
-        await this.sendFeie(deviceId, apiKey, content);
+        this.sendFeie(deviceId, apiKey, content);
         break;
       case 'shangmi':
-        await this.sendShangmi(deviceId, apiKey, content);
+        this.sendShangmi(deviceId, apiKey, content);
         break;
       default:
         throw new Error(`不支持的打印机品牌: ${brand}`);
@@ -307,13 +322,12 @@ ${content}`,
   }
 
   /** 易联云云打印 API */
-  private async sendYilianyun(
+  private sendYilianyun(
     _deviceId: string,
     _apiKey: string,
     _content: string,
-  ): Promise<void> {
+  ): void {
     const partner = this.config.get<string>('PRINTER_YL_PARTNER') || '';
-    const apiKey = this.config.get<string>('PRINTER_YL_API_KEY') || '';
 
     this.logger.log(
       `[Printer] 易联云打印 — partner: ${partner}, deviceId: ${_deviceId}`,
@@ -326,13 +340,8 @@ ${content}`,
   }
 
   /** 飞鹅云打印 API */
-  private async sendFeie(
-    _deviceId: string,
-    _apiKey: string,
-    _content: string,
-  ): Promise<void> {
+  private sendFeie(_deviceId: string, _apiKey: string, _content: string): void {
     const user = this.config.get<string>('PRINTER_FEIE_USER') || '';
-    const ukey = this.config.get<string>('PRINTER_FEIE_UKEY') || '';
 
     this.logger.log(
       `[Printer] 飞鹅打印 — user: ${user}, deviceId: ${_deviceId}`,
@@ -345,13 +354,12 @@ ${content}`,
   }
 
   /** 商米云打印 API */
-  private async sendShangmi(
+  private sendShangmi(
     _deviceId: string,
     _apiKey: string,
     _content: string,
-  ): Promise<void> {
+  ): void {
     const appId = this.config.get<string>('PRINTER_SM_APP_ID') || '';
-    const appSecret = this.config.get<string>('PRINTER_SM_APP_SECRET') || '';
 
     this.logger.log(
       `[Printer] 商米打印 — appId: ${appId}, deviceId: ${_deviceId}`,

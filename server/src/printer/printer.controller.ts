@@ -56,7 +56,7 @@ export class PrinterController {
 
   /** 打印订单小票 */
   @Post('orders/:id/print')
-  async printOrder(
+  printOrder(
     @Headers('x-tenant-id') _tenantId: string,
     @Param('id') orderId: string,
   ) {
@@ -70,12 +70,13 @@ export class PrinterController {
 
   /** 补打订单小票 */
   @Post('orders/:id/reprint')
-  async reprintOrder(
+  reprintOrder(
     @Headers('x-tenant-id') _tenantId: string,
     @Param('id') orderId: string,
   ) {
     return {
-      message: '请通过 PrinterService.reprintOrder(storeId, order) 方法调用补打',
+      message:
+        '请通过 PrinterService.reprintOrder(storeId, order) 方法调用补打',
       orderId,
     };
   }

@@ -1,12 +1,23 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
 import { onPullDownRefresh } from '@dcloudio/uni-app';
-import { getGroupOrders, type GroupOrder } from '@/api/group-order';
+import { getGroupOrders, createGroupOrder, type GroupOrder } from '@/api/group-order';
 import { useAppStore } from '@/stores/app';
+import { useCartStore } from '@/stores/cart';
 
 const appStore = useAppStore();
+const cartStore = useCartStore();
 const pools = ref<GroupOrder[]>([]);
 const loading = ref(true);
+const creating = ref(false);
+
+// 发起拼单弹窗数据
+const showCreateDialog = ref(false);
+const poolForm = ref({
+  condition: 'A',
+  minAmount: 0,
+  deadlineHours: 0.5, // 默认30分钟
+});
 
 function formatPrice(price: number): string {
   return (price / 100).toFixed(2);
@@ -53,12 +64,55 @@ function onPoolClick(id: string) {
 }
 
 function onCreatePool() {
-  uni.showToast({ title: '请在菜品详情页选择菜品后发起拼单', icon: 'none' });
-  // TODO: 跳转发起拼单页面
+  // 需要先选择菜品
+  if (cartStore.itemCount === 0) {
+    uni.showToast({ title: '请先在首页选择菜品加入购物车', icon: 'none' });
+    setTimeout(() => {
+      uni.switchTab({ url: '/pages/index/index' });
+    }, 1500);
+    return;
+  }
+  poolForm.value = { condition: 'A', minAmount: 0, deadlineHours: 0.5 };
+  showCreateDialog.value = true;
+}
+
+async function handleCreatePool() {
+  const storeId = appStore.brandConfig.storeId;
+  if (!storeId) {
+    uni.showToast({ title: '店铺信息未加载', icon: 'none' });
+    return;
+  }
+
+  creating.value = true;
+  try {
+    const deadline = new Date(
+      Date.now() + poolForm.value.deadlineHours * 3600000
+    ).toISOString();
+    const cartItemIds = cartStore.items.map((i) => i.id);
+
+    await createGroupOrder({
+      storeId,
+      condition: poolForm.value.condition,
+      minAmount: Math.round(poolForm.value.minAmount * 100), // 元转分
+      deadline,
+      cartItemIds,
+    });
+
+    uni.showToast({ title: '拼单发起成功', icon: 'success' });
+    showCreateDialog.value = false;
+    // 清空购物车（已用于拼单）
+    await cartStore.clearCart();
+    loadPools();
+  } catch (e) {
+    console.error('[Group] 发起拼单失败', e);
+  } finally {
+    creating.value = false;
+  }
 }
 
 onMounted(() => {
   loadPools();
+  cartStore.fetchCart();
 });
 
 onPullDownRefresh(() => {
@@ -135,6 +189,94 @@ onPullDownRefresh(() => {
 
     <view v-else class="loading-row">
       <text class="loading-text">加载中...</text>
+    </view>
+
+    <!-- 发起拼单弹窗 -->
+    <view v-if="showCreateDialog" class="dialog-mask" @tap="showCreateDialog = false">
+      <view class="dialog" @tap.stop>
+        <view class="dialog__title">发起拼单</view>
+
+        <!-- 购物车商品预览 -->
+        <view class="dialog__cart">
+          <text class="dialog__label">已选商品 ({{ cartStore.itemCount }}件)</text>
+          <view
+            v-for="item in cartStore.items"
+            :key="item.id"
+            class="dialog__cart-item"
+          >
+            <text class="text-ellipsis" style="flex:1">{{ item.dishName }}</text>
+            <text style="color:#999;margin:0 8rpx">{{ item.skuSpecs }}</text>
+            <text>×{{ item.quantity }}</text>
+          </view>
+          <text class="dialog__cart-total">
+            合计: ¥{{ formatPrice(cartStore.totalAmount) }}
+          </text>
+        </view>
+
+        <!-- 拼单设置 -->
+        <view class="dialog__form">
+          <view class="dialog__form-item">
+            <text class="dialog__label">截止时间</text>
+            <view class="dialog__deadline-options">
+              <view
+                v-for="h in [0.5, 1, 2, 4]"
+                :key="h"
+                class="dialog__deadline-btn"
+                :class="{ active: poolForm.deadlineHours === h }"
+                @tap="poolForm.deadlineHours = h"
+              >
+                {{ h < 1 ? '30分钟' : h + '小时' }}
+              </view>
+            </view>
+          </view>
+
+          <view class="dialog__form-item">
+            <text class="dialog__label">拼单模式</text>
+            <view class="dialog__mode-options">
+              <view
+                class="dialog__mode-btn"
+                :class="{ active: poolForm.condition === 'A' }"
+                @tap="poolForm.condition = 'A'"
+              >
+                <text style="font-weight:500">模式A</text>
+                <text style="font-size:20rpx;color:#999">金额达标即成立</text>
+              </view>
+              <view
+                class="dialog__mode-btn"
+                :class="{ active: poolForm.condition === 'B' }"
+                @tap="poolForm.condition = 'B'"
+              >
+                <text style="font-weight:500">模式B</text>
+                <text style="font-size:20rpx;color:#999">全员支付才成立</text>
+              </view>
+            </view>
+          </view>
+
+          <view class="dialog__form-item">
+            <text class="dialog__label">最低起订金额 (元)</text>
+            <input
+              v-model.number="poolForm.minAmount"
+              class="dialog__input"
+              type="digit"
+              placeholder="0 表示不限制"
+            />
+          </view>
+        </view>
+
+        <!-- 按钮 -->
+        <view class="dialog__actions">
+          <view class="dialog__btn dialog__btn--cancel" @tap="showCreateDialog = false">
+            <text>取消</text>
+          </view>
+          <view
+            class="dialog__btn dialog__btn--confirm"
+            :class="{ disabled: creating }"
+            @tap="handleCreatePool"
+          >
+            <text>{{ creating ? '创建中...' : '确认发起' }}</text>
+          </view>
+        </view>
+      </view>
     </view>
   </view>
 </template>
@@ -295,6 +437,145 @@ onPullDownRefresh(() => {
     color: $text-white;
     border-radius: 40rpx;
     font-size: $font-size-base;
+  }
+}
+
+// 弹窗样式
+.dialog-mask {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 1000;
+  display: flex;
+  align-items: flex-end;
+}
+
+.dialog {
+  width: 100%;
+  max-height: 80vh;
+  background: #fff;
+  border-radius: 24rpx 24rpx 0 0;
+  padding: $spacing-xl $spacing-base $spacing-base;
+  overflow-y: auto;
+
+  &__title {
+    font-size: 36rpx;
+    font-weight: 600;
+    text-align: center;
+    margin-bottom: $spacing-base;
+  }
+
+  &__label {
+    font-size: $font-size-sm;
+    color: $text-secondary;
+    display: block;
+    margin-bottom: $spacing-sm;
+  }
+
+  &__cart {
+    background: $bg-page;
+    border-radius: $radius-sm;
+    padding: $spacing-base;
+    margin-bottom: $spacing-base;
+
+    &-item {
+      display: flex;
+      align-items: center;
+      font-size: $font-size-sm;
+      color: $text-primary;
+      padding: 4rpx 0;
+    }
+
+    &-total {
+      font-size: $font-size-base;
+      color: $primary-color;
+      font-weight: 600;
+      text-align: right;
+      margin-top: $spacing-sm;
+      padding-top: $spacing-sm;
+      border-top: 1rpx solid $border-light;
+    }
+  }
+
+  &__form {
+    margin-bottom: $spacing-base;
+
+    &-item {
+      margin-bottom: $spacing-base;
+    }
+  }
+
+  &__deadline-options, &__mode-options {
+    display: flex;
+    gap: $spacing-sm;
+  }
+
+  &__deadline-btn {
+    flex: 1;
+    text-align: center;
+    padding: $spacing-sm;
+    border: 1rpx solid $border-light;
+    border-radius: $radius-sm;
+    font-size: $font-size-sm;
+    color: $text-regular;
+
+    &.active {
+      border-color: $primary-color;
+      color: $primary-color;
+      background: $primary-light;
+    }
+  }
+
+  &__mode-btn {
+    flex: 1;
+    text-align: center;
+    padding: $spacing-base $spacing-sm;
+    border: 1rpx solid $border-light;
+    border-radius: $radius-sm;
+
+    &.active {
+      border-color: $primary-color;
+      background: $primary-light;
+    }
+  }
+
+  &__input {
+    width: 100%;
+    height: 72rpx;
+    border: 1rpx solid $border-light;
+    border-radius: $radius-sm;
+    padding: 0 $spacing-base;
+    font-size: $font-size-base;
+    box-sizing: border-box;
+  }
+
+  &__actions {
+    display: flex;
+    gap: $spacing-base;
+    margin-top: $spacing-base;
+  }
+
+  &__btn {
+    flex: 1;
+    text-align: center;
+    padding: $spacing-base;
+    border-radius: 40rpx;
+    font-size: $font-size-base;
+    font-weight: 500;
+
+    &--cancel {
+      background: $bg-page;
+      color: $text-regular;
+    }
+
+    &--confirm {
+      background: $primary-color;
+      color: #fff;
+
+      &.disabled {
+        opacity: 0.6;
+      }
+    }
   }
 }
 </style>

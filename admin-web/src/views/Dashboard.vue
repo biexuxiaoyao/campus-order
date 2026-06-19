@@ -78,7 +78,9 @@
 import { reactive, onMounted } from 'vue'
 import { getOrders } from '@/api/orders'
 import { getDishes } from '@/api/dishes'
+import { useAppStore } from '@/stores/app'
 
+const appStore = useAppStore()
 const stats = reactive({
   todayRevenue: 0,
   todayOrders: 0,
@@ -105,11 +107,27 @@ function barHeight(amount: number, max: number): number {
   return Math.round((amount / max) * 100)
 }
 
+const DAY_LABELS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+
+function getPastWeekDates(): { label: string; dateStr: string }[] {
+  const result: { label: string; dateStr: string }[] = []
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date()
+    d.setDate(d.getDate() - i)
+    const dateStr = d.toISOString().slice(0, 10)
+    const dayOfWeek = d.getDay()
+    result.push({ label: DAY_LABELS[dayOfWeek], dateStr })
+  }
+  return result
+}
+
 async function loadData() {
   try {
-    // Fetch today's orders
     const today = new Date().toISOString().slice(0, 10)
-    const res1 = await getOrders({ startDate: today, endDate: today, pageSize: 999 })
+    const storeId = appStore.currentStoreId || undefined
+
+    // 1. Today's data
+    const res1 = await getOrders({ startDate: today, endDate: today, pageSize: 999, storeId })
     const todayOrders = (res1 as any)?.list || (res1 as any)?.items || []
     stats.todayOrders = (res1 as any)?.total || todayOrders.length
     stats.todayRevenue = todayOrders.reduce(
@@ -123,48 +141,52 @@ async function loadData() {
       (o: any) => o.status === 'refunding',
     ).length
 
-    // Fetch top dishes
-    const res2 = await getDishes({ pageSize: 5 })
+    // 2. Real 7-day chart data — query each day
+    const weekDays = getPastWeekDates()
+    const dailyAmounts: { date: string; amount: number }[] = []
+    for (const day of weekDays) {
+      const dayRes: any = await getOrders({ startDate: day.dateStr, endDate: day.dateStr, pageSize: 999, storeId })
+      const dayOrders = dayRes?.list || dayRes?.items || []
+      const dayTotal = dayOrders.reduce((sum: number, o: any) => sum + (o.totalAmount || 0), 0)
+      dailyAmounts.push({ date: day.label, amount: dayTotal })
+    }
+    chartData.dailySales = dailyAmounts
+    chartData.maxAmount = Math.max(...dailyAmounts.map((d) => d.amount), 1)
+
+    // 3. Weekly stats
+    const weekStart = weekDays[0].dateStr
+    const weekRes: any = await getOrders({ startDate: weekStart, endDate: today, pageSize: 999, storeId })
+    const weekOrders = weekRes?.list || weekRes?.items || []
+    stats.weekRevenue = weekOrders.reduce((sum: number, o: any) => sum + (o.totalAmount || 0), 0)
+    stats.weekOrders = weekRes?.total || weekOrders.length
+
+    // 4. Yesterday comparison
+    const yesterday = new Date()
+    yesterday.setDate(yesterday.getDate() - 1)
+    const yestStr = yesterday.toISOString().slice(0, 10)
+    const yestRes: any = await getOrders({ startDate: yestStr, endDate: yestStr, pageSize: 999, storeId })
+    const yesterdayOrders = yestRes?.list || yestRes?.items || []
+    const yesterdayTotal = yesterdayOrders.reduce((sum: number, o: any) => sum + (o.totalAmount || 0), 0)
+    const yesterdayCount = yestRes?.total || yesterdayOrders.length
+    stats.revenueChange = yesterdayTotal > 0
+      ? Math.round(((stats.todayRevenue - yesterdayTotal) / yesterdayTotal) * 1000) / 10
+      : 0
+    stats.orderChange = yesterdayCount > 0
+      ? Math.round(((stats.todayOrders - yesterdayCount) / yesterdayCount) * 1000) / 10
+      : 0
+
+    // 5. Top dishes
+    const res2 = await getDishes({ pageSize: 5, storeId })
     const dishes = (res2 as any)?.list || (res2 as any)?.items || []
     stats.topDishes = dishes.map((d: any) => ({
       name: d.name,
-      count: d.soldCount || d.orderCount || Math.floor(Math.random() * 50),
+      count: d.soldCount || d.orderCount || 0,
     }))
-
-    // Mock chart data (in a real scenario, this would come from an API)
-    const days = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
-    chartData.dailySales = days.map((day) => ({
-      date: day,
-      amount: Math.floor(Math.random() * 50000) + 10000,
-    }))
-    chartData.maxAmount = Math.max(...chartData.dailySales.map((d) => d.amount))
   } catch {
-    // API not yet available, populate mock data
-    stats.todayRevenue = 125800
-    stats.todayOrders = 47
-    stats.pendingOrders = 8
-    stats.pendingRefunds = 2
-    stats.weekRevenue = 856000
-    stats.weekOrders = 312
-    stats.revenueChange = 12.5
-    stats.orderChange = 8.3
-    stats.topDishes = [
-      { name: '红烧肉套餐', count: 42 },
-      { name: '宫保鸡丁', count: 38 },
-      { name: '番茄炒蛋饭', count: 35 },
-      { name: '青椒肉丝面', count: 28 },
-      { name: '麻辣烫', count: 24 },
-    ]
-    chartData.dailySales = [
-      { date: '周一', amount: 12000 },
-      { date: '周二', amount: 19000 },
-      { date: '周三', amount: 15000 },
-      { date: '周四', amount: 22000 },
-      { date: '周五', amount: 28000 },
-      { date: '周六', amount: 18000 },
-      { date: '周日', amount: 14000 },
-    ]
-    chartData.maxAmount = 28000
+    // Fallback: API unreachable, show empty state
+    chartData.dailySales = []
+    chartData.maxAmount = 0
+    stats.topDishes = []
   }
 }
 

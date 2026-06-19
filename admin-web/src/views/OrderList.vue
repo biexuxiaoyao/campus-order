@@ -34,9 +34,15 @@
         value-format="YYYY-MM-DD"
         @change="onDateChange"
       />
-      <el-button type="primary" @click="loadData">
+      <el-button type="primary" @click="loadData()">
         <el-icon><Search /></el-icon>
         搜索
+      </el-button>
+      <el-button
+        :type="audioEnabled ? 'primary' : 'info'"
+        @click="audioEnabled = !audioEnabled"
+      >
+        {{ audioEnabled ? '🔊 新单提醒' : '🔇 已静音' }}
       </el-button>
       <el-button
         v-if="selectedIds.length > 0"
@@ -177,12 +183,17 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { getOrders, updateOrderStatus, batchConfirm, approveRefund } from '@/api/orders'
+import { useAppStore } from '@/stores/app'
+import { useAudioAlert } from '@/composables/useAudioAlert'
 
 const router = useRouter()
+const appStore = useAppStore()
+const { playBeep, enabled: audioEnabled } = useAudioAlert()
+
 const list = ref<any[]>([])
 const total = ref(0)
 const loading = ref(false)
@@ -192,6 +203,9 @@ const refundVisible = ref(false)
 const refundOrderId = ref(0)
 const refundApproved = ref(false)
 const refundReason = ref('')
+
+let pollTimer: ReturnType<typeof setInterval> | null = null
+let prevNewOrderCount = 0
 
 const query = reactive({
   page: 1,
@@ -272,7 +286,7 @@ async function handleStatus(id: number, status: string) {
 
 async function handleBatchConfirm() {
   try {
-    await batchConfirm(selectedIds.value)
+    await batchConfirm(appStore.currentStoreId || null, selectedIds.value)
     ElMessage.success('批量确认成功')
     selectedIds.value = []
     loadData()
@@ -302,8 +316,8 @@ async function confirmRefund(approved: boolean) {
   }
 }
 
-async function loadData() {
-  loading.value = true
+async function loadData(silent = false) {
+  if (!silent) loading.value = true
   try {
     const res: any = await getOrders({
       page: query.page,
@@ -312,9 +326,25 @@ async function loadData() {
       status: query.status || undefined,
       startDate: query.startDate || undefined,
       endDate: query.endDate || undefined,
+      storeId: appStore.currentStoreId || undefined,
     })
     list.value = res?.list || res?.items || []
     total.value = res?.total || res?.count || 0
+
+    // Check for new orders (pending/paid status)
+    if (silent) {
+      const newCount = list.value.filter(
+        (o: any) => o.status === 'pending' || o.status === 'paid',
+      ).length
+      if (newCount > prevNewOrderCount) {
+        playBeep()
+      }
+      prevNewOrderCount = newCount
+    } else {
+      prevNewOrderCount = list.value.filter(
+        (o: any) => o.status === 'pending' || o.status === 'paid',
+      ).length
+    }
   } catch {
     list.value = []
     total.value = 0
@@ -323,8 +353,17 @@ async function loadData() {
   }
 }
 
+function startPolling() {
+  pollTimer = setInterval(() => loadData(true), 15000)
+}
+
 onMounted(() => {
   loadData()
+  startPolling()
+})
+
+onUnmounted(() => {
+  if (pollTimer) clearInterval(pollTimer)
 })
 </script>
 

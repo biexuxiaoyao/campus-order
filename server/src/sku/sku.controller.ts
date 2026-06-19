@@ -28,18 +28,12 @@ export class SkuController {
   }
 
   @Post('dishes/:dishId/skus')
-  async create(
-    @Param('dishId') dishId: string,
-    @Body() dto: CreateSkuDto,
-  ) {
+  async create(@Param('dishId') dishId: string, @Body() dto: CreateSkuDto) {
     return this.sku.create(dishId, dto);
   }
 
   @Put('skus/:id')
-  async update(
-    @Param('id') id: string,
-    @Body() dto: UpdateSkuDto,
-  ) {
+  async update(@Param('id') id: string, @Body() dto: UpdateSkuDto) {
     return this.sku.update(id, dto);
   }
 
@@ -49,10 +43,7 @@ export class SkuController {
   }
 
   @Put('skus/:id/stock')
-  async updateStock(
-    @Param('id') id: string,
-    @Body() dto: UpdateStockDto,
-  ) {
+  async updateStock(@Param('id') id: string, @Body() dto: UpdateStockDto) {
     return this.sku.updateStock(id, dto.stock, dto.availableStock, dto.version);
   }
 

@@ -16,11 +16,12 @@
 
 ```
 campus-order/
-├── server/          # NestJS 多租户后端 (141 源文件, 26 模块, 122 API)
+├── server/          # NestJS 多租户后端 (141 源文件, 26 模块, 122 API, 131 单测)
 ├── miniprogram/     # uni-app 小程序模板 (12 页面, 4 组件)
 ├── admin-web/       # Vue 3 管理后台 (14 页面)
 ├── packager/        # 源码交付预处理工具 (14 测试通过)
-├── specs/           # 规格说明书
+├── .github/         # CI/CD (GitHub Actions)
+├── specs/           # 规格说明书 (10+ 份文档)
 └── docs/            # 需求文档 (PRD.md)
 ```
 
@@ -118,5 +119,107 @@ PORT=3000
 
 ## 参考文档
 
-- 需求规格说明书: `docs/PRD.md`
-- 规格索引: `specs/SPEC.md`
+| 类型 | 文档 | 内容 |
+|------|------|------|
+| 需求 | `docs/PRD.md` | 产品需求规格说明书 (v1.0 封板, 18轮审查) |
+| 索引 | `specs/SPEC.md` | 规格文档导航 |
+| 架构 | `specs/ARCHITECTURE.md` | 系统架构、多租户设计 |
+| 数据 | `specs/DATA-MODEL.md` | 数据库表、字段、索引 |
+| API | `specs/API-SPEC.md` | 全部 REST 端点、错误码 |
+| 逻辑 | `specs/STATE-MACHINES.md` | 订单/团单/支付状态机 |
+| 逻辑 | `specs/BUSINESS-RULES.md` | 库存、优惠、退款、并发规则 |
+| 架构 | `specs/MODULES.md` | 模块系统、权限矩阵 |
+| 规划 | `specs/V1-SCOPE.md` | V1.0 范围清单 |
+| 测试 | `specs/QA-TEST-SPEC.md` | QA 测试说明书 (~198 用例) |
+| 测试 | `specs/E2E-TEST-SPEC.md` | 端到端场景用例 (P→B→C 时序, 68 用例) |
+| 测试 | `specs/AGENTIC-TEST-SPEC.md` | Agent 可执行测试规格 (curl + 断言) |
+
+## Agent 配置
+
+> 本项目通过 ccswitch + DeepSeek V4 Pro 运行 Claude Code（当前版本 2.1.172，已验证子 Agent 正常）。
+> 如遇兼容性问题，可回退至 2.1.165（`npm install -g @anthropic-ai/claude-code@2.1.165`）。
+
+### 模型限制（Agent 必须遵守）
+
+- **纯文本模型**：不识别图片/截图。遇到视觉需求时告知用户手动切换模型
+- **工具调用稳定性**：如工具调用未执行（无响应/跳过），请原样重试，不要用纯文本描述意图
+- **退出码检查**：每个 Bash 命令执行后确认退出码，非 0 视为失败
+
+### 规划与验证（强制）
+
+- **多文件修改**（≥ 2 个文件 / 跨模块）：必须先用 EnterPlanMode 出计划
+- **复杂任务**（≥ 3 步）：用 TaskCreate 拆分，追踪完成状态
+- **每次 Edit/Write 后**：Read 确认变更内容正确
+- **声明任务完成前**：逐条回顾用户需求，确认全部满足
+
+### 长任务与上下文
+
+- 每完成 3–5 个步骤后运行 `/compact` 压缩上下文
+- 子 Agent 任务自动路由至 deepseek-v4-flash（速度快 3–5x）
+- 涉及订单/支付/库存等核心业务逻辑时，先读取 `specs/BUSINESS-RULES.md`
+
+### 代码修改后的验证链
+
+```
+Edit/Write → Read 确认 → 按修改位置执行验证
+```
+
+| 修改位置 | 验证命令 |
+|---------|---------|
+| `server/` | `cd server && npm run format && npm run lint && npm test` |
+| `admin-web/` | `cd admin-web && npm run build` |
+| `miniprogram/` | `cd miniprogram && node node_modules/@dcloudio/vite-plugin-uni/bin/uni.js build -p mp-weixin` |
+| `packager/` | `cd packager && npm test` |
+
+### Specs 参考文档
+
+| 任务类型 | 必读文档 |
+|---------|---------|
+| 新建 API / 修改路由 | `specs/API-SPEC.md` |
+| 数据库变更 / Migration | `specs/DATA-MODEL.md` |
+| 订单 / 团单 / 支付逻辑 | `specs/STATE-MACHINES.md` + `specs/BUSINESS-RULES.md` |
+| 模块增删 / 依赖调整 | `specs/MODULES.md` |
+| 功能范围裁剪 | `specs/V1-SCOPE.md` |
+| 架构决策 | `specs/ARCHITECTURE.md` |
+| E2E 测试执行 | `specs/E2E-TEST-SPEC.md` (Human版) / `specs/AGENTIC-TEST-SPEC.md` (Agent版) |
+
+### 测试现状
+
+| 项目 | 测试数 | 命令 |
+|------|--------|------|
+| server | **131 tests / 11 suites** | `cd server && npm test -- --forceExit` |
+| packager | 14 tests | `cd packager && npm test` |
+| admin-web | build check (vue-tsc) | `cd admin-web && npm run build` |
+| miniprogram | build check | `cd miniprogram && node node_modules/@dcloudio/vite-plugin-uni/bin/uni.js build -p mp-weixin` |
+
+覆盖率: 24% overall, 核心 Service 42-68%。
+
+### CI/CD
+
+GitHub Actions (`.github/workflows/ci.yml`): 每次 push/PR 自动运行全部测试 + 构建。
+
+### 关键命令
+
+```bash
+# === 后端 (server/) ===
+cd server && npm run format && npm run lint && npm test -- --forceExit   # 完整验证链
+cd server && npm test -- --forceExit                                      # 仅单元测试 (131 cases)
+cd server && npm run test:cov                                             # 覆盖率报告
+cd server && npm run start:dev                                            # 启动开发服务器
+
+# === 数据库重置 ===
+cd server && npx prisma migrate reset --force && npx ts-node prisma/seed.ts
+
+# === 管理后台 (admin-web/) ===
+cd admin-web && npm run build                                # 构建检查（含 vue-tsc 类型检查）
+cd admin-web && npm run dev                                  # 启动开发服务器
+
+# === 小程序 (miniprogram/) ===
+cd miniprogram && node node_modules/@dcloudio/vite-plugin-uni/bin/uni.js build -p mp-weixin
+
+# === 打包工具 (packager/) ===
+cd packager && npm test                                      # 14 个测试用例
+
+# === 上下文管理 ===
+/compact                                                      # 压缩上下文（长任务中每 3-5 步执行）
+```

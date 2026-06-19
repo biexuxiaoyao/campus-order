@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateDishDto } from './dto/create-dish.dto';
 import { UpdateDishDto } from './dto/update-dish.dto';
@@ -27,7 +31,7 @@ export class DishService {
   constructor(private prisma: PrismaService) {}
 
   async create(storeId: string, dto: CreateDishDto) {
-    return this.prisma.dish.create({
+    const dish = await this.prisma.dish.create({
       data: {
         storeId,
         categoryId: dto.categoryId,
@@ -40,9 +44,31 @@ export class DishService {
       },
       include: dishInclude,
     });
+
+    // Auto-create default SKU so dish is immediately usable
+    const skuId = `${dish.id}-标准`;
+    await this.prisma.sku.create({
+      data: {
+        id: skuId,
+        dishId: dish.id,
+        specs: [{ name: '规格', value: '标准' }],
+        price: dto.price ?? 0,
+        stock: dto.stock ?? 0,
+        availableStock: dto.stock ?? 0,
+      },
+    });
+
+    // Re-fetch with SKU included
+    return this.prisma.dish.findUnique({
+      where: { id: dish.id },
+      include: dishInclude,
+    });
   }
 
-  async findAll(storeId: string, query: QueryDishDto): Promise<PaginatedResponse<unknown>> {
+  async findAll(
+    storeId: string,
+    query: QueryDishDto,
+  ): Promise<PaginatedResponse<unknown>> {
     const where: Prisma.DishWhereInput = { storeId };
 
     if (query.categoryId) {
@@ -105,15 +131,20 @@ export class DishService {
     const data: Prisma.DishUpdateInput = {};
 
     if (dto.name !== undefined) data.name = dto.name;
-    if (dto.categoryId !== undefined) data.category = { connect: { id: dto.categoryId } };
+    if (dto.categoryId !== undefined)
+      data.category = { connect: { id: dto.categoryId } };
     if (dto.imageUrl !== undefined) data.imageUrl = dto.imageUrl;
     if (dto.unit !== undefined) data.unit = dto.unit;
     if (dto.status !== undefined) data.status = dto.status;
     if (dto.scheduledPublishAt !== undefined) {
-      data.scheduledPublishAt = dto.scheduledPublishAt ? new Date(dto.scheduledPublishAt) : null;
+      data.scheduledPublishAt = dto.scheduledPublishAt
+        ? new Date(dto.scheduledPublishAt)
+        : null;
     }
     if (dto.scheduledUnpublishAt !== undefined) {
-      data.scheduledUnpublishAt = dto.scheduledUnpublishAt ? new Date(dto.scheduledUnpublishAt) : null;
+      data.scheduledUnpublishAt = dto.scheduledUnpublishAt
+        ? new Date(dto.scheduledUnpublishAt)
+        : null;
     }
 
     return this.prisma.dish.update({
@@ -194,7 +225,9 @@ export class DishService {
   }
 
   async removeImage(imageId: string) {
-    const image = await this.prisma.dishImage.findUnique({ where: { id: imageId } });
+    const image = await this.prisma.dishImage.findUnique({
+      where: { id: imageId },
+    });
     if (!image) {
       throw new NotFoundException(`图片 ${imageId} 不存在`);
     }
@@ -229,7 +262,9 @@ export class DishService {
   }
 
   async removeRelated(relatedId: string) {
-    const record = await this.prisma.relatedDish.findUnique({ where: { id: relatedId } });
+    const record = await this.prisma.relatedDish.findUnique({
+      where: { id: relatedId },
+    });
     if (!record) {
       throw new NotFoundException(`关联关系 ${relatedId} 不存在`);
     }
@@ -237,9 +272,14 @@ export class DishService {
     return this.prisma.relatedDish.delete({ where: { id: relatedId } });
   }
 
-  /** C端: 查询已上架的菜品列表 */
-  async findPublished(storeId: string, query: QueryDishDto): Promise<PaginatedResponse<unknown>> {
+  /** C端: 查询已上架的菜品列表 (租户隔离) */
+  async findPublished(
+    tenantId: string,
+    storeId: string,
+    query: QueryDishDto,
+  ): Promise<PaginatedResponse<unknown>> {
     const where: Prisma.DishWhereInput = {
+      store: { tenantId },
       storeId,
       status: 'published',
     };
@@ -276,5 +316,17 @@ export class DishService {
       total,
       hasMore: skip + pageSize < total,
     };
+  }
+
+  async getCategories(tenantId?: string) {
+    const where: any = {};
+    if (tenantId) {
+      where.store = { tenantId };
+    }
+    return this.prisma.category.findMany({
+      where,
+      select: { id: true, name: true, storeId: true },
+      orderBy: { sortOrder: 'asc' },
+    });
   }
 }

@@ -1,4 +1,10 @@
-import { IsArray, IsString, IsInt, IsOptional, ArrayMinSize } from 'class-validator';
+import {
+  IsArray,
+  IsString,
+  IsInt,
+  IsOptional,
+  ArrayMinSize,
+} from 'class-validator';
 
 class JoinItemDto {
   @IsString({ message: 'SKU ID不能为空' })

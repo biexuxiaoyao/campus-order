@@ -1,4 +1,4 @@
-import { Controller, Get, Put, Body, Headers } from '@nestjs/common';
+import { Controller, Get, Put, Body, Headers, Req } from '@nestjs/common';
 import { BrandService } from './brand.service';
 import { UpdateBrandConfigDto } from './dto/update-brand-config.dto';
 import { Public } from '../common/decorators/public.decorator';
@@ -9,8 +9,10 @@ export class BrandController {
 
   @Public()
   @Get('config')
-  async getConfig(@Headers('x-tenant-id') tenantId: string) {
-    return this.brand.getConfig(tenantId);
+  async getConfig(@Headers('x-tenant-id') tenantId: string, @Req() req: any) {
+    // 优先使用 header 中的 tenantId，其次使用中间件从 x-app-id 解析的 tenantId
+    const tid = tenantId || req.tenantId;
+    return this.brand.getConfig(tid);
   }
 
   @Put('config')

@@ -83,7 +83,10 @@ export class AuditInterceptor implements NestInterceptor {
    * 从控制器类名推断目标资源类型。
    * 例如 AuthController → auth, BrandController → brand
    */
-  private extractTargetType(context: ExecutionContext, request: Request): string {
+  private extractTargetType(
+    context: ExecutionContext,
+    request: Request,
+  ): string {
     const controllerName = context.getClass().name;
     // BrandController → brand, AdminUserController → admin-user
     const fromController = controllerName
@@ -128,7 +131,9 @@ export class AuditInterceptor implements NestInterceptor {
   private extractIp(request: Request): string | undefined {
     const forwarded = request.headers['x-forwarded-for'];
     if (forwarded) {
-      const ips = Array.isArray(forwarded) ? forwarded[0] : forwarded.split(',')[0];
+      const ips = Array.isArray(forwarded)
+        ? forwarded[0]
+        : forwarded.split(',')[0];
       return ips.trim();
     }
     return request.ip || (request as any).connection?.remoteAddress;

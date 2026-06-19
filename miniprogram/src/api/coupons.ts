@@ -35,7 +35,7 @@ export interface CouponListResult {
  * 获取可领取的优惠券模板
  */
 export function getAvailableCoupons(storeId: string): Promise<CouponTemplate[]> {
-  return get<CouponTemplate[]>(`/api/coupons/available`, { storeId });
+  return get<CouponTemplate[]>(`/api/coupons/claimable`, { storeId });
 }
 
 /**

@@ -6,9 +6,7 @@ import { REDIS_CLIENT } from './redis.constants';
 export class RedisService implements OnModuleDestroy {
   private readonly prefix: string;
 
-  constructor(
-    @Inject(REDIS_CLIENT) private readonly redis: Redis,
-  ) {
+  constructor(@Inject(REDIS_CLIENT) private readonly redis: Redis) {
     this.prefix = process.env.REDIS_PREFIX || 'cache:';
   }
 

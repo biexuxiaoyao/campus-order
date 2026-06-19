@@ -7,6 +7,7 @@ export interface OrderQuery {
   startDate?: string
   endDate?: string
   keyword?: string
+  storeId?: string
 }
 
 export interface RefundApproval {
@@ -15,21 +16,21 @@ export interface RefundApproval {
 }
 
 export function getOrders(params: OrderQuery) {
-  return http.get('/orders', { params })
+  return http.get('/merchant/orders', { params })
 }
 
 export function getOrder(id: number) {
-  return http.get(`/orders/${id}`)
+  return http.get(`/merchant/orders/${id}`)
 }
 
 export function updateOrderStatus(id: number, status: string) {
-  return http.put(`/orders/${id}/status`, { status })
+  return http.put(`/merchant/orders/${id}/status`, { status })
 }
 
 export function approveRefund(id: number, data: RefundApproval) {
-  return http.post(`/orders/${id}/refund`, data)
+  return http.post(`/merchant/orders/${id}/refund/approve`, data)
 }
 
-export function batchConfirm(ids: number[]) {
-  return http.put('/orders/batch-confirm', { ids })
+export function batchConfirm(storeId: string | null, orderIds: (string | number)[]) {
+  return http.post('/merchant/orders/batch-confirm', { storeId, orderIds: orderIds.map(String) })
 }

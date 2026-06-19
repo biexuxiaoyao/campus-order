@@ -1,4 +1,13 @@
-import { Controller, Post, Body, Headers, Req } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Headers,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
+import { AuthGuard } from '@nestjs/passport';
 import { AuthService } from './auth.service';
 import { Public } from '../common/decorators/public.decorator';
 
@@ -29,5 +38,16 @@ export class AuthController {
     @Headers('x-tenant-id') tenantId?: string,
   ) {
     return this.auth.adminLogin(username, password, tenantId);
+  }
+
+  @Post('admin-logout')
+  adminLogout() {
+    return { message: '已退出' };
+  }
+
+  @Get('admin-profile')
+  @UseGuards(AuthGuard('jwt'))
+  async adminProfile(@Req() req: any) {
+    return this.auth.getAdminProfile(req.user?.userId);
   }
 }

@@ -11,6 +11,7 @@ export interface LoginResponse {
   };
   appId: string;
   tenantId: string;
+  modules?: string[];
 }
 
 /**

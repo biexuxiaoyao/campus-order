@@ -44,3 +44,15 @@ tmp/
 # Claude Code sessions (exclude transcripts)
 .claude/plans/
 .claude/worktrees/
+
+# Codex local runtime files
+.codex/
+
+# Playwright auth state and reports
+admin-web/.auth.json
+admin-web/tests/.auth.json
+admin-web/test-results/
+
+# Source delivery generated outputs
+server/deliveries/
+delivery-test/

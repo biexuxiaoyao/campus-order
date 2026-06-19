@@ -10,4 +10,12 @@ export class QueryTenantDto extends PaginationDto {
   @IsOptional()
   @IsString()
   keyword?: string;
+
+  @IsOptional()
+  @IsString()
+  name?: string;
+
+  @IsOptional()
+  @IsString()
+  appId?: string;
 }

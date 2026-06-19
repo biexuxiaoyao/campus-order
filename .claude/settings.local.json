@@ -13,15 +13,14 @@
       "TaskGet",
       "TaskList",
       "Agent",
-      "NotebookEdit",
       "EnterPlanMode",
       "ExitPlanMode",
       "AskUserQuestion",
+      "Workflow",
+      "NotebookEdit",
       "CronCreate",
       "CronDelete",
-      "CronList",
       "ScheduleWakeup",
-      "Workflow",
       "Bash(cd /c/Users/25220/Projects/campus-order*)",
       "Bash(docker *)",
       "Bash(npm *)",
@@ -37,9 +36,7 @@
       "Bash(cp *)",
       "Bash(mv *)",
       "Bash(echo *)",
-      "Bash(export *)",
       "Bash(find *)",
-      "Bash(grep *)",
       "Bash(netstat *)",
       "Bash(taskkill *)",
       "Bash(pnpm *)",
@@ -51,7 +48,101 @@
       "Bash(xargs -I{} taskkill //PID {} //F)",
       "Bash(node_modules/.bin/jest --config ./test/jest-e2e.json --forceExit --no-cache)",
       "Bash(npm run *)",
-      "Read(//tmp/**)"
+      "Read(//tmp/**)",
+      "Bash(DATABASE_URL=\"mysql://root:root123456@localhost:3306/campus_order?charset=utf8mb4\" npx prisma migrate reset --force)",
+      "Bash(PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION=\"能接受，这是测试环境，我们本地的\" DATABASE_URL=\"mysql://root:root123456@localhost:3306/campus_order?charset=utf8mb4\" npx prisma migrate reset --force)",
+      "Bash(DATABASE_URL=\"mysql://root:root123456@localhost:3306/campus_order?charset=utf8mb4\" npx ts-node prisma/seed.ts)",
+      "Bash(python3 -m json.tool)",
+      "Bash(python3 -c \"import sys,json; items=json.load\\(sys.stdin\\)['data']['items']; print\\([i['skus'][0]['id'] for i in items[:3]]\\)\")",
+      "Bash(tasklist //FI \"IMAGENAME eq node.exe\")",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\)['data']; print\\(f'{d[\\\\\"total\\\\\"]} \\(names: {[i[\\\\\"name\\\\\"] for i in d[\\\\\"items\\\\\"]]}\\)'\\)\")",
+      "Bash(python3 -c \"import sys,json; print\\(len\\(json.load\\(sys.stdin\\)['data']['items']\\)\\)\")",
+      "Bash(PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION=\"B路线回归验证\" DATABASE_URL=\"mysql://root:root123456@localhost:3306/campus_order?charset=utf8mb4\" npx prisma migrate reset --force)",
+      "Bash(npx kill-port *)",
+      "Bash(npx nest *)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(json.dumps\\(d.get\\('scripts',{}\\), indent=2\\)\\); print\\('\\\\nJest config:'\\); print\\(json.dumps\\(d.get\\('jest',{}\\), indent=2\\)\\)\")",
+      "Bash(cd *)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\)['data']; print\\(f'name={d[\\\\\"name\\\\\"]} theme={d[\\\\\"themeColor\\\\\"]} hours={d[\\\\\"hours\\\\\"]}'\\)\")",
+      "Bash(python3 -c \"import sys,json; print\\(json.load\\(sys.stdin\\)['data']['total'],'dishes'\\)\")",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\)['data']; print\\(len\\(d\\),'categories'\\)\")",
+      "Bash(python3 -c \"import sys,json; print\\('Brand reset: ' + json.load\\(sys.stdin\\)['code']\\)\")",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\)['data']; print\\(f'name={d[\\\\\"name\\\\\"]} theme={d[\\\\\"themeColor\\\\\"]}'\\)\")",
+      "Bash(grep -c \"whitelist\\\\|transform\" C:/Users/25220/Projects/campus-order/server/dist/main.js)",
+      "Bash(node dist/main.js)",
+      "Bash(findstr \"LISTENING\")",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\)['data']; print\\(f'name={d[\\\\\"name\\\\\"]} theme={d[\\\\\"themeColor\\\\\"]} banner={len\\(d[\\\\\"banners\\\\\"]\\)}张'\\)\")",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\)['data']; [print\\(f'  {c[\\\\\"name\\\\\"]}'\\) for c in d]\")",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\)['data']; print\\(f'total={d[\\\\\"total\\\\\"]} items={len\\(d[\\\\\"items\\\\\"]\\)}'\\); [print\\(f'  {i[\\\\\"name\\\\\"]} ¥{i[\\\\\"skus\\\\\"][0][\\\\\"price\\\\\"]/100:.2f}'\\) for i in d['items'][:5]]\")",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:5173)",
+      "Bash(pip list *)",
+      "Bash(where openDesign)",
+      "Bash(where open-design *)",
+      "Read(//c/Users/25220/.vscode/extensions/**)",
+      "Bash(claude mcp *)",
+      "Bash(python3 *)",
+      "mcp__open-design__list_projects",
+      "mcp__open-design__create_project",
+      "mcp__open-design__start_run",
+      "mcp__open-design__get_run",
+      "mcp__open-design__list_files",
+      "mcp__open-design__get_file",
+      "mcp__open-design__get_project",
+      "mcp__open-design__get_artifact",
+      "mcp__open-design__get_active_context",
+      "mcp__open-design__search_files",
+      "mcp__open-design__write_file",
+      "mcp__open-design__create_artifact",
+      "mcp__open-design__delete_file",
+      "mcp__open-design__delete_project",
+      "mcp__open-design__cancel_run",
+      "mcp__open-design__list_skills",
+      "mcp__open-design__list_plugins",
+      "mcp__open-design__list_agents",
+      "mcp__open-design__list_design_systems",
+      "ListMcpResourcesTool",
+      "ReadMcpResourceTool",
+      "CronList",
+      "TaskOutput",
+      "TaskStop",
+      "Bash(head *)",
+      "Bash(tail *)",
+      "Bash(wc *)",
+      "Bash(sleep *)",
+      "Bash(findstr *)",
+      "Bash(pip *)",
+      "Bash(where *)",
+      "Bash(PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION=\"能接受，这是测试环境\" DATABASE_URL=\"mysql://root:root123456@localhost:3306/campus_order?charset=utf8mb4\" npx prisma migrate reset --force)",
+      "Bash(PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION=\"能接受，这是测试环境\" DATABASE_URL=\"mysql://root:root123456@localhost:3306/campus_order?charset=utf8mb4\" npx prisma migrate *)",
+      "Skill(fewer-permission-prompts)",
+      "Bash(DATABASE_URL=\"mysql://root:root123456@localhost:3306/campus_order?charset=utf8mb4\" npx prisma migrate dev --name add_tenant_docs_and_purchases)",
+      "Bash(DATABASE_URL=\"mysql://root:root123456@localhost:3306/campus_order?charset=utf8mb4\" npx prisma db push)",
+      "Bash(DATABASE_URL=\"mysql://root:root123456@localhost:3306/campus_order?charset=utf8mb4\" npx prisma db push --accept-data-loss)",
+      "Bash(DATABASE_URL=\"mysql://root:root123456@localhost:3306/campus_order?charset=utf8mb4\" npx prisma format)",
+      "Bash(PRISMA_MIGRATE_NON_INTERACTIVE=true DATABASE_URL=\"mysql://root:root123456@localhost:3306/campus_order?charset=utf8mb4\" npx prisma migrate dev --name add_tenant_docs)",
+      "Bash(DATABASE_URL=\"mysql://root:root123456@localhost:3306/campus_order?charset=utf8mb4\" npx prisma db execute --stdin)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'echo \"[HARNESS] 文件已修改。验证清单: ① Read 确认变更 ② cd server && npm run format ③ cd server && npm run lint ④ 如改业务逻辑则 cd server && npm test ⑤ 如改前端则 cd admin-web && npm run build\"'"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'echo \"[HARNESS] 任务结束前自检: ① 所有用户需求已满足? ② npm test 通过? ③ 无遗留未提交变更?\"'"
+          }
+        ]
+      }
     ]
   }
 }

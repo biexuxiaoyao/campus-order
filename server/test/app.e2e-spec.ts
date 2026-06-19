@@ -7,7 +7,7 @@ const request = (supertest as any).default || supertest;
 
 describe('Campus-Order E2E Tests', () => {
   let app: INestApplication;
-  let adminToken: string;
+  let _adminToken: string;
   const testTenantId = 'test-tenant-e2e';
   const headers = {
     'x-tenant-id': testTenantId,
@@ -20,7 +20,9 @@ describe('Campus-Order E2E Tests', () => {
     }).compile();
 
     app = moduleFixture.createNestApplication();
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true }),
+    );
     await app.init();
   });
 
@@ -61,8 +63,7 @@ describe('Campus-Order E2E Tests', () => {
     });
 
     it('GET /api/brand/config - should fail without tenant header', async () => {
-      const res = await request(app.getHttpServer())
-        .get('/api/brand/config');
+      const res = await request(app.getHttpServer()).get('/api/brand/config');
       expect([400, 403]).toContain(res.status);
     });
   });
@@ -70,7 +71,7 @@ describe('Campus-Order E2E Tests', () => {
   // ==================== Phase 2: CRUD ====================
 
   describe('Store', () => {
-    let storeId: string;
+    let _storeId: string;
 
     it('POST /api/merchant/stores - should create store', async () => {
       const res = await request(app.getHttpServer())
@@ -79,7 +80,7 @@ describe('Campus-Order E2E Tests', () => {
         .send({ name: '测试门店', address: '测试地址', phone: '13800138000' });
       // May fail due to auth, but validates route exists
       expect([201, 401, 403]).toContain(res.status);
-      if (res.status === 201) storeId = res.body.data?.id;
+      if (res.status === 201) _storeId = res.body.data?.id;
     });
 
     it('GET /api/merchant/stores - should list stores', async () => {

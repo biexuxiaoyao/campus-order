@@ -59,3 +59,16 @@ export function getDishList(params: QueryDishParams): Promise<DishListResult> {
 export function getDishDetail(id: string): Promise<Dish> {
   return get<Dish>(`/api/dishes/${id}`);
 }
+
+export interface Category {
+  id: string;
+  name: string;
+  storeId: string;
+}
+
+/**
+ * 获取分类列表（C端公开）
+ */
+export function getCategories(): Promise<Category[]> {
+  return get<Category[]>('/api/dishes/categories');
+}

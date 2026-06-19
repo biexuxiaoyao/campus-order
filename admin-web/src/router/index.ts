@@ -97,6 +97,14 @@ const router = createRouter({
   ],
 })
 
+// Module-to-route mapping for access control
+const routeModuleMap: Record<string, string> = {
+  '/group-orders': 'group-meal',
+  '/discounts': 'discount',
+  '/points': 'points',
+  '/coupons': 'coupon',
+}
+
 router.beforeEach((to, _from, next) => {
   const token = localStorage.getItem('token')
   if (to.meta.public) {
@@ -104,6 +112,23 @@ router.beforeEach((to, _from, next) => {
   } else if (!token) {
     next('/login')
   } else {
+    // Module-based access check
+    const requiredModule = routeModuleMap[to.path]
+    if (requiredModule) {
+      try {
+        const userStr = localStorage.getItem('user')
+        if (userStr) {
+          const user = JSON.parse(userStr)
+          const modules: string[] = user.modules || []
+          if (!modules.includes(requiredModule)) {
+            next('/dashboard')
+            return
+          }
+        }
+      } catch {
+        // If user data isn't available, allow navigation (sidebar will filter)
+      }
+    }
     next()
   }
 })

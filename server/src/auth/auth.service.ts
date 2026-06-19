@@ -1,5 +1,6 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../prisma/prisma.service';
 import { WechatService } from './wechat.service';
 
@@ -43,9 +44,20 @@ export class AuthService {
     });
 
     const refreshToken = await this.jwt.signAsync(
-      { sub: user.id, tenantId: tenant.id, openid: session.openid, type: 'refresh' },
+      {
+        sub: user.id,
+        tenantId: tenant.id,
+        openid: session.openid,
+        type: 'refresh',
+      },
       { expiresIn: '7d' },
     );
+
+    // 4. 查询租户已购买的模块
+    const tenantModules = await this.prisma.tenantModule.findMany({
+      where: { tenantId: tenant.id, status: 'active' },
+      select: { moduleId: true },
+    });
 
     return {
       token,
@@ -56,6 +68,9 @@ export class AuthService {
         avatar: user.avatar,
         phone: user.phone,
       },
+      appId: tenant.appId,
+      tenantId: tenant.id,
+      modules: tenantModules.map((m) => m.moduleId),
     };
   }
 
@@ -92,13 +107,25 @@ export class AuthService {
     // 使用查到的实际 tenantId
     const actualTenantId = admin.tenantId;
 
+    // 检查租户状态和 License
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: actualTenantId },
+    });
+    if (!tenant) {
+      throw new UnauthorizedException('商家不存在');
+    }
+    if (tenant.status === 'expired') {
+      throw new UnauthorizedException(
+        '商家已过期，License 已被吊销，请联系平台管理员',
+      );
+    }
+
     // 检查锁定状态
     if (admin.lockedUntil && admin.lockedUntil > new Date()) {
       throw new UnauthorizedException('账号已锁定，请稍后再试');
     }
 
     // 验证密码
-    const bcrypt = require('bcryptjs');
     const valid = await bcrypt.compare(password, admin.passwordHash);
 
     if (!valid) {
@@ -106,7 +133,10 @@ export class AuthService {
       if (attempts >= 5) {
         await this.prisma.adminUser.update({
           where: { id: admin.id },
-          data: { loginAttempts: attempts, lockedUntil: new Date(Date.now() + 15 * 60 * 1000) },
+          data: {
+            loginAttempts: attempts,
+            lockedUntil: new Date(Date.now() + 15 * 60 * 1000),
+          },
         });
         throw new UnauthorizedException('密码错误次数过多，账号已锁定 15 分钟');
       }
@@ -124,10 +154,48 @@ export class AuthService {
     });
 
     const token = await this.jwt.signAsync(
-      { sub: admin.id, tenantId: actualTenantId, role: admin.role, isAdmin: true },
+      {
+        sub: admin.id,
+        tenantId: actualTenantId,
+        role: admin.role,
+        isAdmin: true,
+      },
       { expiresIn: '12h' },
     );
 
-    return { token, user: { id: admin.id, username: admin.username, role: admin.role, tenantId: actualTenantId } };
+    // 查询租户已购买的模块
+    const tenantModules = await this.prisma.tenantModule.findMany({
+      where: { tenantId: actualTenantId, status: 'active' },
+      select: { moduleId: true },
+    });
+
+    return {
+      token,
+      user: {
+        id: admin.id,
+        username: admin.username,
+        role: admin.role,
+        tenantId: actualTenantId,
+        modules: tenantModules.map((m) => m.moduleId),
+      },
+    };
+  }
+
+  async getAdminProfile(userId: string) {
+    const admin = await this.prisma.adminUser.findUnique({
+      where: { id: userId },
+      select: { id: true, username: true, role: true, tenantId: true },
+    });
+    if (!admin) throw new UnauthorizedException('管理员不存在');
+
+    const tenantModules = await this.prisma.tenantModule.findMany({
+      where: { tenantId: admin.tenantId, status: 'active' },
+      select: { moduleId: true },
+    });
+
+    return {
+      ...admin,
+      modules: tenantModules.map((m) => m.moduleId),
+    };
   }
 }

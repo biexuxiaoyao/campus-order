@@ -4,7 +4,6 @@ import {
   Put,
   Post,
   Body,
-  Headers,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -29,36 +28,22 @@ export class UserController {
   }
 
   @Get('notify-prefs')
-  async getNotifyPrefs(
-    @Req() req: any,
-    @Headers('x-tenant-id') tenantId: string,
-  ) {
-    return this.userService.getNotificationPrefs(req.user?.userId, tenantId);
+  async getNotifyPrefs(@Req() req: any) {
+    return this.userService.getNotificationPrefs(req.user?.userId, req.tenantId);
   }
 
   @Put('notify-prefs')
-  async updateNotifyPrefs(
-    @Req() req: any,
-    @Headers('x-tenant-id') tenantId: string,
-    @Body() dto: UpdateNotifyPrefsDto,
-  ) {
-    return this.userService.updateNotificationPrefs(
-      req.user?.userId,
-      tenantId,
-      dto,
-    );
+  async updateNotifyPrefs(@Req() req: any, @Body() dto: UpdateNotifyPrefsDto) {
+    return this.userService.updateNotificationPrefs(req.user?.userId, req.tenantId, dto);
   }
 
   @Post('export-data')
-  async exportData(
-    @Req() req: any,
-    @Headers('x-tenant-id') tenantId: string,
-  ) {
-    return this.userService.requestDataExport(req.user?.userId, tenantId);
+  async exportData(@Req() req: any) {
+    return this.userService.requestDataExport(req.user?.userId, req.tenantId);
   }
 
   @Post('deactivate')
-  async deactivate(@Req() req: any) {
+  deactivate(@Req() req: any) {
     return this.userService.deactivateAccount(req.user?.userId);
   }
 }

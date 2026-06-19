@@ -1,21 +1,27 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { useAuthStore } from '@/stores/auth';
+import { useAppStore } from '@/stores/app';
 import { getBalance } from '@/api/prepaid';
 import { getPointsSummary } from '@/api/points';
 
 const authStore = useAuthStore();
+const appStore = useAppStore();
 
 // 余额和积分摘要
 const balanceInfo = ref({ totalBalance: 0 });
 const pointsInfo = ref({ balance: 0 });
 
-const menuItems = [
-  { icon: '&#128220;', label: '我的订单', url: '/pages/orders/orders' },
-  { icon: '&#127873;', label: '积分中心', url: '/pages/points/points' },
-  { icon: '&#127991;', label: '我的优惠券', url: '/pages/coupons/coupons' },
-  { icon: '&#128179;', label: '预充值余额', url: '/pages/prepaid/prepaid' },
+const allMenuItems = [
+  { icon: '&#128220;', label: '我的订单', url: '/pages/orders/orders', module: null, isTab: true },
+  { icon: '&#127873;', label: '积分中心', url: '/pages/points/points', module: 'points', isTab: false },
+  { icon: '&#127991;', label: '我的优惠券', url: '/pages/coupons/coupons', module: 'coupon', isTab: false },
+  { icon: '&#128179;', label: '预充值余额', url: '/pages/prepaid/prepaid', module: 'prepaid', isTab: false },
 ];
+
+const menuItems = computed(() =>
+  allMenuItems.filter((item) => item.module === null || appStore.hasModule(item.module)),
+);
 
 function formatPrice(price: number): string {
   return (price / 100).toFixed(2);
@@ -34,8 +40,12 @@ async function loadSummary() {
   }
 }
 
-function onMenuItemClick(url: string) {
-  uni.navigateTo({ url });
+function onMenuItemClick(item: (typeof allMenuItems)[number]) {
+  if (item.isTab) {
+    uni.switchTab({ url: item.url });
+  } else {
+    uni.navigateTo({ url: item.url });
+  }
 }
 
 function onLogout() {
@@ -99,7 +109,7 @@ onMounted(() => {
         v-for="item in menuItems"
         :key="item.url"
         class="menu-item"
-        @tap="onMenuItemClick(item.url)"
+        @tap="onMenuItemClick(item)"
       >
         <view class="menu-item__left">
           <text class="menu-item__icon" v-html="item.icon"></text>

@@ -5,5 +5,23 @@
     "@nestjs/throttler": "^6.5.0",
     "bullmq": "^5.78.1",
     "ioredis": "^5.11.1"
-  }
+  },
+  "name": "campus-order",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.61.0",
+    "playwright": "^1.61.0"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs"
 }

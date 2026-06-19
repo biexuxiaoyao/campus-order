@@ -1,4 +1,10 @@
-import { IsArray, IsString, IsInt, IsNotEmpty, ArrayMinSize } from 'class-validator';
+import {
+  IsArray,
+  IsString,
+  IsInt,
+  IsNotEmpty,
+  ArrayMinSize,
+} from 'class-validator';
 
 class RepresentItemDto {
   @IsString({ message: 'SKU ID不能为空' })

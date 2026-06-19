@@ -15,7 +15,11 @@ export const CACHE_EVICT = 'cache:evict';
  * (e.g. DishService) by reading this metadata via Reflect.getMetadata.
  */
 export function Cacheable(ttl?: number) {
-  return (target: object, propertyKey: string, descriptor: PropertyDescriptor) => {
+  return (
+    target: object,
+    propertyKey: string,
+    descriptor: PropertyDescriptor,
+  ) => {
     SetMetadata(CACHE_KEY, propertyKey)(target, propertyKey, descriptor);
     if (ttl !== undefined) {
       SetMetadata(CACHE_TTL, ttl)(target, propertyKey, descriptor);
@@ -35,7 +39,11 @@ export function Cacheable(ttl?: number) {
  * by reading this metadata via Reflect.getMetadata.
  */
 export function CacheEvict(pattern: string) {
-  return (target: object, propertyKey: string, descriptor: PropertyDescriptor) => {
+  return (
+    target: object,
+    propertyKey: string,
+    descriptor: PropertyDescriptor,
+  ) => {
     SetMetadata(CACHE_EVICT, pattern)(target, propertyKey, descriptor);
     return descriptor;
   };

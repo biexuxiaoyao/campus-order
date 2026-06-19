@@ -37,6 +37,9 @@ export const useAuthStore = defineStore('auth', () => {
             uni.setStorageSync('userInfo', data.user);
             uni.setStorageSync('appId', data.appId);
             uni.setStorageSync('tenantId', data.tenantId);
+            if (data.modules) {
+              uni.setStorageSync('modules', data.modules);
+            }
 
             resolve();
           } catch (e) {

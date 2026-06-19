@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
-import { getPointsSummary, signIn, getPointsTransactions } from '@/api/points';
+import { getPointsSummary, signIn, getPointsTransactions, exchange } from '@/api/points';
 import type { PointsSummary, PointsTransaction } from '@/api/points';
 
 const summary = ref<PointsSummary>({
@@ -12,6 +12,13 @@ const summary = ref<PointsSummary>({
 const transactions = ref<PointsTransaction[]>([]);
 const loading = ref(true);
 const signingIn = ref(false);
+const exchangingId = ref<string | null>(null);
+
+// 兑换规则 - 对应后端积分兑换商品
+const exchangeRules = [
+  { id: 'coupon_10_2', label: '满10减2券', points: 100, type: 'coupon' },
+  { id: 'coupon_20_5', label: '满20减5券', points: 200, type: 'coupon' },
+];
 
 async function loadSummary() {
   try {
@@ -45,6 +52,31 @@ async function onSignIn() {
     console.error('[Points] 签到失败', e);
   } finally {
     signingIn.value = false;
+  }
+}
+
+async function onExchange(rule: typeof exchangeRules[0]) {
+  if (exchangingId.value) return;
+  if (summary.value.balance < rule.points) {
+    uni.showToast({ title: `积分不足，需要${rule.points}积分`, icon: 'none' });
+    return;
+  }
+  const res = await uni.showModal({
+    title: '确认兑换',
+    content: `使用 ${rule.points} 积分兑换「${rule.label}」？`,
+  });
+  if (!res.confirm) return;
+
+  exchangingId.value = rule.id;
+  try {
+    const result = await exchange(rule.id);
+    summary.value.balance = result.afterBalance;
+    uni.showToast({ title: '兑换成功', icon: 'success' });
+    await loadTransactions();
+  } catch (e) {
+    console.error('[Points] 兑换失败', e);
+  } finally {
+    exchangingId.value = null;
   }
 }
 
@@ -101,22 +133,23 @@ onMounted(async () => {
       </view>
     </view>
 
-    <!-- 兑换规则（简化展示） -->
+    <!-- 兑换规则 -->
     <view class="card">
       <text class="section__title">积分兑换</text>
       <view class="exchange-grid">
-        <view class="exchange-item">
-          <text class="exchange-item__points">100积分</text>
-          <text class="exchange-item__reward">满10减2券</text>
-          <view class="exchange-item__btn">
-            <text>兑换</text>
-          </view>
-        </view>
-        <view class="exchange-item">
-          <text class="exchange-item__points">200积分</text>
-          <text class="exchange-item__reward">满20减5券</text>
-          <view class="exchange-item__btn">
-            <text>兑换</text>
+        <view
+          v-for="rule in exchangeRules"
+          :key="rule.id"
+          class="exchange-item"
+        >
+          <text class="exchange-item__points">{{ rule.points }}积分</text>
+          <text class="exchange-item__reward">{{ rule.label }}</text>
+          <view
+            class="exchange-item__btn"
+            :class="{ 'exchange-item__btn--disabled': exchangingId === rule.id || summary.balance < rule.points }"
+            @tap="onExchange(rule)"
+          >
+            <text>{{ exchangingId === rule.id ? '兑换中...' : '兑换' }}</text>
           </view>
         </view>
       </view>
@@ -254,6 +287,11 @@ onMounted(async () => {
     font-size: $font-size-sm;
     display: inline-block;
     margin-top: $spacing-xs;
+
+    &--disabled {
+      background-color: $bg-dark;
+      color: $text-secondary;
+    }
   }
 }
 

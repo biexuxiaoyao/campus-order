@@ -26,14 +26,14 @@ export class WechatService {
     const response = await fetch(url);
     const data = await response.json();
 
-    if ((data as any).errcode) {
-      throw new Error(`微信登录失败: ${(data as any).errmsg} (code: ${(data as any).errcode})`);
+    if (data.errcode) {
+      throw new Error(`微信登录失败: ${data.errmsg} (code: ${data.errcode})`);
     }
 
     return {
-      openid: (data as any).openid,
-      session_key: (data as any).session_key,
-      unionid: (data as any).unionid,
+      openid: data.openid,
+      session_key: data.session_key,
+      unionid: data.unionid,
     };
   }
 }

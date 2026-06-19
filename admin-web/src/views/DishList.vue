@@ -18,11 +18,12 @@
         @change="loadData"
       >
         <el-option label="全部" value="" />
-        <el-option label="主食" value="主食" />
-        <el-option label="炒菜" value="炒菜" />
-        <el-option label="汤类" value="汤类" />
-        <el-option label="小吃" value="小吃" />
-        <el-option label="饮品" value="饮品" />
+        <el-option
+          v-for="cat in categories"
+          :key="cat.id"
+          :label="cat.name"
+          :value="cat.id"
+        />
       </el-select>
       <el-select
         v-model="query.status"
@@ -135,11 +136,12 @@
         </el-form-item>
         <el-form-item label="分类" prop="category">
           <el-select v-model="form.category" placeholder="选择分类" style="width: 100%">
-            <el-option label="主食" value="主食" />
-            <el-option label="炒菜" value="炒菜" />
-            <el-option label="汤类" value="汤类" />
-            <el-option label="小吃" value="小吃" />
-            <el-option label="饮品" value="饮品" />
+            <el-option
+              v-for="cat in categories"
+              :key="cat.id"
+              :label="cat.name"
+              :value="cat.id"
+            />
           </el-select>
         </el-form-item>
         <el-form-item label="图片链接" prop="image">
@@ -190,11 +192,14 @@
 import { reactive, ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Delete } from '@element-plus/icons-vue'
-import { getDishes, createDish, updateDish, deleteDish } from '@/api/dishes'
+import { getDishes, createDish, updateDish, deleteDish, getCategories } from '@/api/dishes'
+import { useAppStore } from '@/stores/app'
 import type { DishData, DishSpec } from '@/api/dishes'
 import type { FormInstance, FormRules } from 'element-plus'
 
+const appStore = useAppStore()
 const list = ref<DishData[]>([])
+const categories = ref<{ id: string; name: string }[]>([])
 const total = ref(0)
 const loading = ref(false)
 const dialogVisible = ref(false)
@@ -276,7 +281,7 @@ async function handleSubmit() {
       await updateDish(editingId.value, { ...form })
       ElMessage.success('编辑成功')
     } else {
-      await createDish({ ...form })
+      await createDish(appStore.currentStoreId || '1', { ...form })
       ElMessage.success('创建成功')
     }
     dialogVisible.value = false
@@ -318,6 +323,7 @@ async function loadData() {
       keyword: query.keyword || undefined,
       category: query.category || undefined,
       status: query.status || undefined,
+      storeId: appStore.currentStoreId || undefined,
     })
     list.value = res?.list || res?.items || []
     total.value = res?.total || res?.count || 0
@@ -329,8 +335,18 @@ async function loadData() {
   }
 }
 
+async function loadCategories() {
+  try {
+    const res: any = await getCategories()
+    categories.value = res || []
+  } catch {
+    categories.value = []
+  }
+}
+
 onMounted(() => {
   loadData()
+  loadCategories()
 })
 </script>
 

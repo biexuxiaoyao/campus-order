@@ -13,7 +13,9 @@ import { ReviewTenantDto } from './dto/review-tenant.dto';
 import { AssignModulesDto } from './dto/assign-modules.dto';
 import { UpdateLicenseDto } from './dto/update-license.dto';
 import { CorrectDataDto } from './dto/correct-data.dto';
+import { UpdateDocumentsDto } from './dto/update-documents.dto';
 import * as crypto from 'crypto';
+import * as bcrypt from 'bcryptjs';
 
 @Injectable()
 export class AdminService {
@@ -23,7 +25,7 @@ export class AdminService {
 
   /** Paginated list of tenants with filters */
   async listTenants(query: QueryTenantDto) {
-    const { status, keyword, page = 1, pageSize = 20 } = query;
+    const { status, keyword, name, appId, page = 1, pageSize = 20 } = query;
 
     const where: any = {};
 
@@ -36,6 +38,14 @@ export class AdminService {
         { name: { contains: keyword } },
         { appId: { contains: keyword } },
       ];
+    }
+
+    if (name) {
+      where.name = { contains: name };
+    }
+
+    if (appId) {
+      where.appId = { contains: appId };
     }
 
     const [total, items] = await Promise.all([
@@ -96,7 +106,7 @@ export class AdminService {
     return tenant;
   }
 
-  /** Create tenant with appId uniqueness check. Generate licenseKey. */
+  /** Create tenant with appId uniqueness check. Auto-create admin + BrandConfig + base module. */
   async createTenant(dto: CreateTenantDto) {
     // Check appId uniqueness
     const existing = await this.prisma.tenant.findUnique({
@@ -108,8 +118,10 @@ export class AdminService {
     }
 
     const licenseKey = crypto.randomUUID();
+    const defaultPassword = 'admin123'; // 生产环境应随机生成并通过短信/邮件发送
+    const passwordHash = await bcrypt.hash(defaultPassword, 10);
 
-    return this.prisma.tenant.create({
+    const tenant = await this.prisma.tenant.create({
       data: {
         appId: dto.appId,
         name: dto.name,
@@ -117,6 +129,55 @@ export class AdminService {
         licenseKey,
       },
     });
+
+    // Auto-create admin account (老板角色)
+    await this.prisma.adminUser.create({
+      data: {
+        tenantId: tenant.id,
+        username: 'admin',
+        passwordHash,
+        role: 'owner',
+        status: 'active',
+      },
+    });
+
+    // Auto-create BrandConfig with tenant name
+    await this.prisma.brandConfig.create({
+      data: {
+        tenantId: tenant.id,
+        config: {
+          name: dto.name,
+          logo: '',
+          themeColor: '#1A6EFF',
+          banners: [],
+          hours: '08:00-20:00',
+          phone: '',
+        },
+      },
+    });
+
+    // Assign base module
+    const baseModule = await this.prisma.module.findUnique({
+      where: { id: 'base' },
+    });
+    if (baseModule) {
+      await this.prisma.tenantModule.create({
+        data: { tenantId: tenant.id, moduleId: 'base', status: 'active' },
+      });
+    }
+
+    // Auto-create default store (必需，否则商家无法接单)
+    await this.prisma.store.create({
+      data: {
+        tenantId: tenant.id,
+        name: `${dto.name}（总店）`,
+        address: '',
+        phone: '',
+        status: 'active',
+      },
+    });
+
+    return tenant;
   }
 
   /** Update tenant name, status, expireAt */
@@ -219,6 +280,20 @@ export class AdminService {
           status: 'active',
         })),
       });
+
+      // Record module purchases for new modules
+      const allModules = await this.prisma.module.findMany({
+        where: { id: { in: toAdd } },
+      });
+      const priceMap = new Map(allModules.map((m) => [m.id, m.priceSourceCode || 0]));
+      await this.prisma.modulePurchase.createMany({
+        data: toAdd.map((moduleId) => ({
+          tenantId,
+          moduleId,
+          action: 'purchase',
+          amount: priceMap.get(moduleId) || 0,
+        })),
+      });
     }
 
     // Return updated list
@@ -243,6 +318,7 @@ export class AdminService {
         where: { id: tenantId },
         data: {
           licenseKey,
+          status: 'active', // 重新签发时恢复 active 状态
           expireAt: dto.newExpireAt
             ? new Date(dto.newExpireAt)
             : tenant.expireAt,
@@ -255,9 +331,7 @@ export class AdminService {
         data: {
           licenseKey: null,
           status: 'expired',
-          expireAt: dto.newExpireAt
-            ? new Date(dto.newExpireAt)
-            : undefined,
+          expireAt: dto.newExpireAt ? new Date(dto.newExpireAt) : undefined,
         },
       });
     }
@@ -297,7 +371,9 @@ export class AdminService {
       this.prisma.tenant.count({ where: { status: 'active' } }),
       this.prisma.tenant.count({ where: { status: 'expired' } }),
       this.prisma.tenant.count({ where: { status: 'deleted' } }),
-      this.prisma.user.count({ where: { tenant: { status: { not: 'deleted' } } } }),
+      this.prisma.user.count({
+        where: { tenant: { status: { not: 'deleted' } } },
+      }),
       this.prisma.order.count({
         where: {
           createdAt: { gte: today, lt: tomorrow },
@@ -373,29 +449,41 @@ export class AdminService {
 
   // ===================== Data Correction =====================
 
-  /** Data correction: verifies password, creates AuditLog entry */
+  /** Data correction: verifies password, applies data update, creates AuditLog */
   async correctData(operatorId: string, dto: CorrectDataDto) {
-    // Password verification — look up the operator in AdminUser table
     const operator = await this.prisma.adminUser.findUnique({
       where: { id: operatorId },
     });
-
     if (!operator) {
       throw new ForbiddenException('无权执行此操作：操作者不存在');
     }
 
-    // Verify password using simple hash comparison
-    // (same pattern as auth service — SHA256)
-    const hash = crypto
-      .createHash('sha256')
-      .update(dto.password)
-      .digest('hex');
-
-    if (hash !== operator.passwordHash) {
+    const passwordValid = await bcrypt.compare(dto.password, operator.passwordHash);
+    if (!passwordValid) {
       throw new ForbiddenException('密码验证失败');
     }
 
-    // Create audit log entry
+    // Map targetType to Prisma model and apply corrections
+    const modelMap: Record<string, string> = {
+      order: 'order',
+      'group-order': 'groupOrder',
+      dish: 'dish',
+      user: 'user',
+      tenant: 'tenant',
+    };
+
+    const modelName = modelMap[dto.targetType];
+    if (!modelName) {
+      throw new BadRequestException(`不支持的目标类型: ${dto.targetType}`);
+    }
+
+    // Apply the correction to the database
+    await (this.prisma as any)[modelName].update({
+      where: { id: dto.targetId },
+      data: dto.corrections,
+    });
+
+    // Create immutable audit log
     await this.prisma.auditLog.create({
       data: {
         tenantId: operator.tenantId,
@@ -411,7 +499,7 @@ export class AdminService {
     });
 
     return {
-      message: '数据修正请求已记录',
+      message: '数据修正已执行',
       targetType: dto.targetType,
       targetId: dto.targetId,
     };
@@ -466,6 +554,190 @@ export class AdminService {
         checksum: dto.checksum,
         deliveredAt: dto.deliveredAt ? new Date(dto.deliveredAt) : undefined,
         expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : undefined,
+      },
+    });
+  }
+
+  // ===================== Tenant Documents =====================
+
+  async updateDocuments(tenantId: string, dto: UpdateDocumentsDto) {
+    const tenant = await this.prisma.tenant.findUnique({ where: { id: tenantId } });
+    if (!tenant) throw new NotFoundException('租户不存在');
+
+    const data: any = {};
+    if (dto.bizLicenseUrl !== undefined) data.bizLicenseUrl = dto.bizLicenseUrl;
+    if (dto.foodPermitUrl !== undefined) data.foodPermitUrl = dto.foodPermitUrl;
+    if (dto.idCardUrl !== undefined) data.idCardUrl = dto.idCardUrl;
+    if (dto.storePhotoUrl !== undefined) data.storePhotoUrl = dto.storePhotoUrl;
+
+    return this.prisma.tenant.update({ where: { id: tenantId }, data });
+  }
+
+  // ===================== Module Purchases =====================
+
+  async getPurchases(tenantId: string) {
+    return this.prisma.modulePurchase.findMany({
+      where: { tenantId },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  // ===================== Source Delivery =====================
+
+  /** Calculate incremental source delivery pricing */
+  async getSourceQuote(tenantId: string) {
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      include: { modules: true },
+    });
+    if (!tenant) throw new NotFoundException('租户不存在');
+
+    // Current modules
+    const currentModuleIds = tenant.modules
+      .filter((m) => m.status === 'active')
+      .map((m) => m.moduleId);
+
+    // Last delivery
+    const lastDelivery = await this.prisma.sourceDelivery.findFirst({
+      where: { tenantId },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const lastModules: string[] = lastDelivery?.moduleSnapshot
+      ? (lastDelivery.moduleSnapshot as string[])
+      : [];
+
+    // Diff
+    const newModules = currentModuleIds.filter((id) => !lastModules.includes(id));
+    const removedModules = lastModules.filter((id) => !currentModuleIds.includes(id));
+
+    // Calculate pricing
+    const monthsSinceLast = lastDelivery
+      ? Math.max(0, (Date.now() - new Date(lastDelivery.createdAt).getTime()) / (30 * 24 * 3600 * 1000))
+      : Infinity;
+
+    const baseUpgradeFee = !lastDelivery ? 0
+      : monthsSinceLast <= 6 ? 300000
+      : monthsSinceLast <= 18 ? 500000
+      : 800000;
+
+    // Get module prices
+    const allModules = await this.prisma.module.findMany();
+    const priceMap = new Map(allModules.map((m) => [m.id, m.priceSourceCode || 0]));
+
+    const newModuleFees = newModules.map((id) => ({
+      moduleId: id,
+      price: priceMap.get(id) || 0,
+    }));
+
+    const subtotal = baseUpgradeFee + newModuleFees.reduce((s, m) => s + m.price, 0);
+
+    // Cap: not exceed 90% of full current price minus already paid
+    const currentFullPrice = currentModuleIds.reduce((s, id) => s + (priceMap.get(id) || 0), 0);
+    const alreadyPaid = lastDelivery?.price || 0;
+    const cap = Math.max(0, Math.round(currentFullPrice * 0.9) - alreadyPaid);
+    const finalPrice = Math.min(subtotal, cap);
+
+    const isFirstDelivery = !lastDelivery;
+
+    return {
+      isFirstDelivery,
+      currentModules: currentModuleIds,
+      lastDelivery: lastDelivery ? {
+        id: lastDelivery.id,
+        version: lastDelivery.version,
+        moduleSnapshot: lastModules,
+        price: lastDelivery.price,
+        deliveredAt: lastDelivery.createdAt,
+      } : null,
+      newModules,
+      removedModules,
+      breakdown: {
+        baseUpgradeFee,
+        newModuleFees,
+        subtotal,
+        cap,
+        finalPrice,
+      },
+    };
+  }
+
+  /** Execute source delivery — create record + trigger packager */
+  async executeSourceDelivery(tenantId: string) {
+    const quote = await this.getSourceQuote(tenantId);
+
+    if (quote.newModules.length === 0 && !quote.isFirstDelivery) {
+      throw new BadRequestException('没有新增模块，无需重新交付');
+    }
+
+    const version = `delivery-v${Date.now().toString(36)}`;
+    const watermarkId = `wm-${tenantId.substring(0, 8)}-${version}`;
+
+    const delivery = await this.prisma.sourceDelivery.create({
+      data: {
+        tenantId,
+        version,
+        modules: quote.currentModules.map((id) => ({ id, version: '1.0.0' })) as any,
+        moduleSnapshot: quote.currentModules as any,
+        watermarkId,
+        price: quote.breakdown.finalPrice,
+        baseUpgradeFee: quote.isFirstDelivery ? null : quote.breakdown.baseUpgradeFee,
+        newModuleFee: quote.breakdown.newModuleFees.reduce((s, m) => s + m.price, 0),
+        status: 'processing',
+        deliveredAt: new Date(),
+      },
+    });
+
+    // Record payment
+    if (quote.breakdown.finalPrice > 0) {
+      await this.prisma.modulePurchase.create({
+        data: {
+          tenantId,
+          moduleId: 'source-delivery',
+          action: quote.isFirstDelivery ? 'purchase' : 'renew',
+          amount: quote.breakdown.finalPrice,
+        },
+      });
+    }
+
+    // TODO Phase 2: Trigger packager worker via Redis queue
+    // await this.packagerQueue.add('deliver', { tenantId, deliveryId: delivery.id });
+
+    // For now, mark as completed (packager integration comes next)
+    await this.prisma.sourceDelivery.update({
+      where: { id: delivery.id },
+      data: {
+        status: 'completed',
+        downloadUrl: `/api/admin/source-delivery/${delivery.id}/download`,
+      },
+    });
+
+    return {
+      deliveryId: delivery.id,
+      version,
+      price: quote.breakdown.finalPrice,
+      status: 'completed',
+      note: '交付记录已创建。Packager 集成将在 Phase 2 完成后自动生成交付包。',
+    };
+  }
+
+  /** Get delivery history for a tenant */
+  async getSourceDeliveries(tenantId: string) {
+    return this.prisma.sourceDelivery.findMany({
+      where: { tenantId },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        version: true,
+        moduleSnapshot: true,
+        price: true,
+        baseUpgradeFee: true,
+        newModuleFee: true,
+        watermarkId: true,
+        status: true,
+        downloadUrl: true,
+        createdAt: true,
+        deliveredAt: true,
       },
     });
   }

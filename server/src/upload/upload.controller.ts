@@ -21,10 +21,7 @@ export class UploadController {
   @UseGuards(AuthGuard('jwt'))
   @Post()
   @UseInterceptors(
-    FileFieldsInterceptor(
-      [{ name: 'files', maxCount: 9 }],
-      multerConfig,
-    ),
+    FileFieldsInterceptor([{ name: 'files', maxCount: 9 }], multerConfig),
   )
   async upload(
     @UploadedFiles() fileFields: { files?: Express.Multer.File[] },
@@ -37,9 +34,7 @@ export class UploadController {
 
   @UseGuards(AuthGuard('jwt'))
   @Delete()
-  async delete(
-    @Body() dto: DeleteFileDto,
-  ): Promise<{ deleted: boolean }> {
+  async delete(@Body() dto: DeleteFileDto): Promise<{ deleted: boolean }> {
     await this.uploadService.deleteFile(dto.url);
     return { deleted: true };
   }

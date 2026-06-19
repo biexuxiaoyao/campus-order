@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AddCartItemDto } from './dto/add-cart-item.dto';
 import { UpdateCartItemDto } from './dto/update-cart-item.dto';
@@ -250,7 +254,9 @@ export class CartService {
         throw new BadRequestException(`SKU ${item.skuId} 不存在`);
       }
       if (sku.status !== 'active') {
-        throw new BadRequestException(`"${sku.dish?.name ?? '未知菜品'}" 已下架`);
+        throw new BadRequestException(
+          `"${sku.dish?.name ?? '未知菜品'}" 已下架`,
+        );
       }
       if (sku.availableStock < item.quantity) {
         throw new BadRequestException(

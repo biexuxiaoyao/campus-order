@@ -14,14 +14,14 @@ export interface WechatPrepayRequest {
   out_trade_no: string;
   notify_url: string;
   amount: {
-    total: number;       // 单位：分
-    currency?: string;   // 默认 CNY
+    total: number; // 单位：分
+    currency?: string; // 默认 CNY
   };
   payer: {
     openid: string;
   };
   attach?: string;
-  time_expire?: string;  // RFC3339
+  time_expire?: string; // RFC3339
   goods_tag?: string;
   settle_info?: {
     profit_sharing?: boolean;
@@ -40,8 +40,8 @@ export interface WxJSAPIParams {
   appId: string;
   timeStamp: string;
   nonceStr: string;
-  package: string;       // "prepay_id=xxx"
-  signType: string;      // "RSA"
+  package: string; // "prepay_id=xxx"
+  signType: string; // "RSA"
   paySign: string;
 }
 
@@ -52,7 +52,7 @@ export interface WechatNotifyBody {
   id: string;
   create_time: string;
   resource_type: string; // "encrypt-resource"
-  event_type: string;    // "TRANSACTION.SUCCESS"
+  event_type: string; // "TRANSACTION.SUCCESS"
   summary: string;
   resource: WechatNotifyResource;
 }
@@ -60,7 +60,7 @@ export interface WechatNotifyBody {
 /** 回调通知加密资源 */
 export interface WechatNotifyResource {
   original_type: string;
-  algorithm: string;            // "AEAD_AES_256_GCM"
+  algorithm: string; // "AEAD_AES_256_GCM"
   ciphertext: string;
   associated_data: string;
   nonce: string;
@@ -73,11 +73,11 @@ export interface WechatTransaction {
   out_trade_no: string;
   transaction_id: string;
   trade_type: string;
-  trade_state: string;          // SUCCESS, REFUND, NOTPAY, CLOSED, REVOKED, USERPAYING, PAYERROR
+  trade_state: string; // SUCCESS, REFUND, NOTPAY, CLOSED, REVOKED, USERPAYING, PAYERROR
   trade_state_desc: string;
   bank_type: string;
   attach: string;
-  success_time: string;         // RFC3339
+  success_time: string; // RFC3339
   payer: {
     openid: string;
   };
@@ -111,7 +111,7 @@ export interface WechatRefundResponse {
   transaction_id: string;
   out_trade_no: string;
   channel: string;
-  status: string;               // SUCCESS, CLOSED, PROCESSING, ABNORMAL
+  status: string; // SUCCESS, CLOSED, PROCESSING, ABNORMAL
   amount: {
     total: number;
     refund: number;

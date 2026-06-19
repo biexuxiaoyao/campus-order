@@ -9,10 +9,7 @@ export class UploadService {
   /**
    * Save a single file and return its URL path.
    */
-  async saveFile(
-    file: Express.Multer.File,
-    tenantId: string,
-  ): Promise<string> {
+  async saveFile(file: Express.Multer.File, tenantId: string): Promise<string> {
     const ext = this.extractExt(file.originalname);
     this.validateExt(ext);
 
@@ -45,9 +42,7 @@ export class UploadService {
    */
   async deleteFile(url: string): Promise<void> {
     // Prevent directory traversal — only allow paths under the upload dir
-    const uploadRoot = path.resolve(
-      process.env.UPLOAD_DIR || './uploads',
-    );
+    const uploadRoot = path.resolve(process.env.UPLOAD_DIR || './uploads');
 
     // Remove leading /uploads/ prefix so we get the relative path
     const relative = url.replace(/^\/uploads\//, '');

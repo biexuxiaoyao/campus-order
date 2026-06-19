@@ -254,9 +254,7 @@ export class NotifyService {
       const data = response.data;
 
       if (!data.access_token) {
-        throw new Error(
-          `获取 access_token 失败: ${JSON.stringify(data)}`,
-        );
+        throw new Error(`获取 access_token 失败: ${JSON.stringify(data)}`);
       }
 
       const token = data.access_token;
@@ -265,9 +263,7 @@ export class NotifyService {
       // 写入 Redis，TTL 7000 秒
       await this.redis.set(cacheKey, token, ttl);
 
-      this.logger.log(
-        `[Notify] access_token 已缓存，TTL: ${ttl}s`,
-      );
+      this.logger.log(`[Notify] access_token 已缓存，TTL: ${ttl}s`);
 
       return token;
     } catch (err: unknown) {

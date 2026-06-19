@@ -1,7 +1,7 @@
 <template>
   <div class="login-container">
     <div class="login-card">
-      <h1 class="login-title">商家管理后台</h1>
+      <h1 class="login-title">campus-order 商户管理</h1>
       <p class="login-subtitle">餐饮点餐SaaS管理系统</p>
       <el-form
         ref="formRef"
@@ -78,7 +78,7 @@ async function handleLogin() {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #fff5f0, #ffe8d9, #ff6b35);
 }
 
 .login-card {
@@ -86,7 +86,7 @@ async function handleLogin() {
   padding: 40px;
   background: #fff;
   border-radius: 12px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.12);
 }
 
 .login-title {

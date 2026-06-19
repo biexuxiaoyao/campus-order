@@ -1,7 +1,4 @@
-import {
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateDiscountRuleDto } from './dto/create-discount-rule.dto';
 import { UpdateDiscountRuleDto } from './dto/update-discount-rule.dto';
@@ -82,7 +79,7 @@ export class DiscountService {
 
     const allRules = await this.prisma.discountRule.findMany({
       where: { storeId, status: 'active' },
-      orderBy: { priority: 'asc' },
+      orderBy: { priority: 'desc' }, // 高优先级排前面
     });
 
     const now = new Date();
@@ -189,7 +186,7 @@ export class DiscountService {
     switch (type) {
       case 'percent_off':
         // value 为折扣百分比，如 20 表示打 8 折（优惠 20%）
-        return Math.floor(totalAmount * value / 100);
+        return Math.floor((totalAmount * value) / 100);
 
       case 'amount_off':
         // value 为固定减免金额（分），不能超过订单总额
@@ -207,11 +204,12 @@ export class DiscountService {
           return sum;
         }, 0);
 
-      case 'free_item':
+      case 'free_item': {
         // 免一件最低价商品
         if (items.length === 0) return 0;
         const minPrice = Math.min(...items.map((i) => i.price));
         return minPrice;
+      }
 
       default:
         return 0;

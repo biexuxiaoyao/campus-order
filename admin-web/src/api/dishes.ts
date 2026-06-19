@@ -24,30 +24,31 @@ export interface DishQuery {
   keyword?: string
   category?: string
   status?: string
+  storeId?: string
 }
 
 export function getDishes(params: DishQuery) {
-  return http.get('/dishes', { params })
+  return http.get('/merchant/dishes', { params })
 }
 
 export function getDish(id: number) {
-  return http.get(`/dishes/${id}`)
+  return http.get(`/merchant/dishes/${id}`)
 }
 
-export function createDish(data: DishData) {
-  return http.post('/dishes', data)
+export function createDish(storeId: string, data: DishData) {
+  return http.post(`/merchant/stores/${storeId}/dishes`, data)
 }
 
 export function updateDish(id: number, data: DishData) {
-  return http.put(`/dishes/${id}`, data)
+  return http.put(`/merchant/dishes/${id}`, data)
 }
 
 export function deleteDish(id: number) {
-  return http.delete(`/dishes/${id}`)
+  return http.delete(`/merchant/dishes/${id}`)
 }
 
 export function batchStatus(ids: number[], status: string) {
-  return http.put('/dishes/batch-status', { ids, status })
+  return http.post('/merchant/dishes/batch-status', { ids, status })
 }
 
 export function getCategories() {
