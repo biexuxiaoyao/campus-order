@@ -3,6 +3,7 @@ import { GroupOrderService } from './group-order.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotifyService } from '../notify/notify.service';
 import {
+  ConflictException,
   NotFoundException,
   BadRequestException,
   ForbiddenException,
@@ -77,16 +78,42 @@ describe('GroupOrderService', () => {
     });
     SKU_1 = skus[0].id;
     SKU_2 = skus[1].id;
+
+    // Ensure sufficient stock for all tests
+    await prisma.sku.updateMany({
+      where: { id: { in: [SKU_1, SKU_2] } },
+      data: { availableStock: 1000 },
+    });
   });
 
   afterAll(async () => {
     await prisma.$disconnect();
   });
   afterEach(async () => {
+    // Clean up in order of FK dependencies: timeline → items → groupOrderItems → orders → groupOrders
+    await prisma.orderTimeline.deleteMany({
+      where: { order: { storeId: STORE_ID } },
+    });
+    await prisma.orderItem.deleteMany({
+      where: { order: { storeId: STORE_ID } },
+    });
+    await prisma.paymentRecord.deleteMany({
+      where: { order: { storeId: STORE_ID } },
+    });
+    await prisma.refundRecord.deleteMany({
+      where: { order: { storeId: STORE_ID } },
+    });
     await prisma.groupOrderItem.deleteMany({
       where: { groupOrder: { storeId: STORE_ID } },
     });
+    await prisma.order.deleteMany({ where: { storeId: STORE_ID } });
     await prisma.groupOrder.deleteMany({ where: { storeId: STORE_ID } });
+
+    // Restore SKU stock consumed by tests
+    await prisma.sku.updateMany({
+      where: { id: { in: [SKU_1, SKU_2] } },
+      data: { availableStock: 1000, version: { increment: 1 } },
+    });
   });
 
   describe('createPool', () => {
@@ -203,6 +230,18 @@ describe('GroupOrderService', () => {
         }),
       ).rejects.toThrow(BadRequestException);
     });
+
+    it('should reject join when stock insufficient', async () => {
+      const pool = await service.createPool(USER_A, TENANT_ID, {
+        storeId: STORE_ID,
+        minAmount: 100,
+      });
+      await expect(
+        service.joinPool(pool.id, USER_B, {
+          items: [{ skuId: SKU_1, quantity: 999999 }],
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
   });
 
   describe('closePool', () => {
@@ -219,7 +258,53 @@ describe('GroupOrderService', () => {
       expect(result.status).toBe('success');
     });
 
-    it('should mark cancelled when condition A not met', async () => {
+    it('should create one Order per participant on success', async () => {
+      const sku1Before = await prisma.sku.findUnique({
+        where: { id: SKU_1 },
+      });
+      const pool = await service.createPool(USER_A, TENANT_ID, {
+        storeId: STORE_ID,
+        minAmount: 100,
+      });
+      await service.joinPool(pool.id, USER_B, {
+        items: [{ skuId: SKU_1, quantity: 2 }],
+      });
+      await service.joinPool(pool.id, USER_A, {
+        items: [{ skuId: SKU_1, quantity: 1 }],
+      });
+      await service.closePool(pool.id, USER_A);
+
+      const orders = await prisma.order.findMany({
+        where: { type: 'group_pool' },
+        include: { items: true, timeline: true },
+      });
+      expect(orders.length).toBe(2); // One per participant
+      for (const order of orders) {
+        expect(order.status).toBe('pending');
+        expect(order.type).toBe('group_pool');
+        expect(order.timeline.length).toBeGreaterThanOrEqual(1);
+        expect(order.timeline[0].status).toBe('pending');
+      }
+
+      // Stock deducted
+      const sku1After = await prisma.sku.findUnique({
+        where: { id: SKU_1 },
+      });
+      expect(sku1After!.availableStock).toBe(sku1Before!.availableStock - 3);
+
+      // Back-link
+      const goItems = await prisma.groupOrderItem.findMany({
+        where: { groupOrderId: pool.id },
+      });
+      for (const item of goItems) {
+        expect(item.orderId).toBeTruthy();
+      }
+    });
+
+    it('should mark cancelled when condition A not met and NOT create orders', async () => {
+      const sku1Before = await prisma.sku.findUnique({
+        where: { id: SKU_1 },
+      });
       const pool = await service.createPool(USER_A, TENANT_ID, {
         storeId: STORE_ID,
         minAmount: 999999,
@@ -230,6 +315,50 @@ describe('GroupOrderService', () => {
       });
       const result = await service.closePool(pool.id, USER_A);
       expect(result.status).toBe('cancelled');
+
+      // No orders created
+      const orders = await prisma.order.findMany({
+        where: { type: 'group_pool' },
+      });
+      expect(orders.length).toBe(0);
+
+      // No stock deducted
+      const sku1After = await prisma.sku.findUnique({
+        where: { id: SKU_1 },
+      });
+      expect(sku1After!.availableStock).toBe(sku1Before!.availableStock);
+    });
+
+    it('should rollback transaction on stock race condition', async () => {
+      const pool = await service.createPool(USER_A, TENANT_ID, {
+        storeId: STORE_ID,
+        minAmount: 100,
+      });
+      await service.joinPool(pool.id, USER_B, {
+        items: [{ skuId: SKU_1, quantity: 1 }],
+      });
+
+      // Deplete stock externally to simulate race
+      await prisma.sku.update({
+        where: { id: SKU_1 },
+        data: { availableStock: 0, version: { increment: 1 } },
+      });
+
+      await expect(service.closePool(pool.id, USER_A)).rejects.toThrow(
+        ConflictException,
+      );
+
+      // GroupOrder should still be 'pooling'
+      const go = await prisma.groupOrder.findUnique({
+        where: { id: pool.id },
+      });
+      expect(go!.status).toBe('pooling');
+
+      // No orders created
+      const orders = await prisma.order.findMany({
+        where: { type: 'group_pool' },
+      });
+      expect(orders.length).toBe(0);
     });
 
     it('should reject non-leader close', async () => {
@@ -244,7 +373,10 @@ describe('GroupOrderService', () => {
   });
 
   describe('representOrder', () => {
-    it('should create represent order immediately', async () => {
+    it('should create represent order with real Order record', async () => {
+      const sku1Before = await prisma.sku.findUnique({
+        where: { id: SKU_1 },
+      });
       const order = await service.representOrder(USER_A, TENANT_ID, {
         storeId: STORE_ID,
         items: [
@@ -255,6 +387,38 @@ describe('GroupOrderService', () => {
       expect(order.mode).toBe('represent');
       expect(order.status).toBe('success');
       expect(order.items.length).toBe(2);
+
+      // Verify Order was created
+      const dbOrders = await prisma.order.findMany({
+        where: { type: 'group_represent' },
+        include: { items: true, timeline: true },
+      });
+      expect(dbOrders.length).toBe(1);
+      expect(dbOrders[0].status).toBe('pending');
+      expect(dbOrders[0].timeline[0].status).toBe('pending');
+
+      // Stock deducted
+      const sku1After = await prisma.sku.findUnique({
+        where: { id: SKU_1 },
+      });
+      expect(sku1After!.availableStock).toBe(sku1Before!.availableStock - 2);
+
+      // Back-link
+      const goItems = await prisma.groupOrderItem.findMany({
+        where: { groupOrderId: order.id },
+      });
+      for (const item of goItems) {
+        expect(item.orderId).toBeTruthy();
+      }
+    });
+
+    it('should reject represent order on insufficient stock', async () => {
+      await expect(
+        service.representOrder(USER_A, TENANT_ID, {
+          storeId: STORE_ID,
+          items: [{ skuId: SKU_1, quantity: 999999, recipientName: 'X' }],
+        }),
+      ).rejects.toThrow(ConflictException);
     });
 
     it('should reject invalid SKU', async () => {

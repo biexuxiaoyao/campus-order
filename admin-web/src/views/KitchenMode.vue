@@ -5,6 +5,7 @@
       <div class="stats">
         <span>待处理: {{ pendingCount }}</span>
         <span style="margin-left: 20px">制作中: {{ cookingCount }}</span>
+        <span style="margin-left: 20px; color: #07c160">待取餐: {{ readyCount }}</span>
         <span style="margin-left: 20px; color: #a0a0b0">刷新 {{ countdown }}s</span>
         <el-button
           :type="audioEnabled ? 'primary' : 'info'"
@@ -69,7 +70,7 @@
           :key="order.id"
           class="kitchen-card"
           style="border-color: #f0a040"
-          @click="handleComplete(order)"
+          @click="handleReady(order)"
         >
           <div class="order-no">#{{ order.orderNo }}</div>
           <div class="items">
@@ -86,9 +87,35 @@
       </div>
     </div>
 
+    <!-- Ready Orders Grid -->
+    <div v-if="readyOrders.length > 0" style="margin-top: 30px">
+      <h2 style="color: #07c160; margin-bottom: 12px">待取餐 ({{ readyOrders.length }})</h2>
+      <div class="kitchen-grid">
+        <div
+          v-for="order in readyOrders"
+          :key="order.id"
+          class="kitchen-card"
+          style="border-color: #07c160"
+          @click="handlePickup(order)"
+        >
+          <div class="order-no">#{{ order.orderNo }}</div>
+          <div class="items">
+            <div v-for="item in order.items" :key="item.id">
+              <strong>{{ item.dishName }}</strong>
+              <template v-if="item.specName">({{ item.specName }})</template>
+              <span style="color: #e94560"> x{{ item.quantity }}</span>
+            </div>
+          </div>
+          <div class="time-badge" style="background: #07c160">
+            待取餐
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Empty State -->
     <div
-      v-if="pendingOrders.length === 0 && cookingOrders.length === 0"
+      v-if="pendingOrders.length === 0 && cookingOrders.length === 0 && readyOrders.length === 0"
       style="
         display: flex;
         align-items: center;
@@ -115,12 +142,14 @@ const { playBeep, enabled: audioEnabled } = useAudioAlert()
 
 const pendingOrders = ref<any[]>([])
 const cookingOrders = ref<any[]>([])
+const readyOrders = ref<any[]>([])
 const countdown = ref(5)
 let timer: ReturnType<typeof setInterval> | null = null
 let countdownTimer: ReturnType<typeof setInterval> | null = null
 
 const pendingCount = ref(0)
 const cookingCount = ref(0)
+const readyCount = ref(0)
 let prevPendingCount = 0
 let prevCookingCount = 0
 
@@ -158,8 +187,12 @@ async function fetchOrders() {
     cookingOrders.value = allOrders
       .filter((o: any) => o.status === 'cooking')
       .sort(sortByUrge)
+    readyOrders.value = allOrders
+      .filter((o: any) => o.status === 'ready')
+      .sort(sortByUrge)
     pendingCount.value = pendingOrders.value.length
     cookingCount.value = cookingOrders.value.length
+    readyCount.value = readyOrders.value.length
 
     // Play audio alert if new orders appeared
     if (
@@ -174,13 +207,16 @@ async function fetchOrders() {
     // Show demo data
     pendingOrders.value = []
     cookingOrders.value = []
+    readyOrders.value = []
     pendingCount.value = 0
     cookingCount.value = 0
+    readyCount.value = 0
   }
 }
 
 async function handleStart(order: any) {
   try {
+    // confirmed → cooking
     await updateOrderStatus(order.id, 'cooking')
     ElMessage.success('开始制作 ' + order.orderNo)
     fetchOrders()
@@ -189,10 +225,22 @@ async function handleStart(order: any) {
   }
 }
 
-async function handleComplete(order: any) {
+async function handleReady(order: any) {
   try {
-    await updateOrderStatus(order.id, 'completed')
-    ElMessage.success('已完成 ' + order.orderNo)
+    // cooking → ready
+    await updateOrderStatus(order.id, 'ready')
+    ElMessage.success('已出餐 ' + order.orderNo)
+    fetchOrders()
+  } catch {
+    // handled by interceptor
+  }
+}
+
+async function handlePickup(order: any) {
+  try {
+    // ready → picked
+    await updateOrderStatus(order.id, 'picked')
+    ElMessage.success('已取餐 ' + order.orderNo)
     fetchOrders()
   } catch {
     // handled by interceptor

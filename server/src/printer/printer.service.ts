@@ -1,6 +1,7 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
+import { YilianyunService } from './yilianyun.service';
 import { CreatePrinterDto } from './dto/create-printer.dto';
 import { UpdatePrinterDto } from './dto/update-printer.dto';
 
@@ -35,6 +36,7 @@ export class PrinterService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
+    private readonly yilianyun: YilianyunService,
   ) {}
 
   // ==================== CRUD ====================
@@ -140,7 +142,7 @@ export class PrinterService {
 
     for (const printer of printers) {
       try {
-        this.sendToCloudPrinter(
+        await this.sendToCloudPrinter(
           printer.brand,
           printer.deviceId,
           printer.apiKey,
@@ -289,26 +291,20 @@ export class PrinterService {
    * 根据品牌调用对应云打印 API
    * 开发环境下仅记录日志
    */
-  private sendToCloudPrinter(
+  private async sendToCloudPrinter(
     brand: string,
     deviceId: string,
     apiKey: string,
     content: string,
-  ): void {
-    if (process.env.NODE_ENV === 'development') {
-      this.logger.log(
-        `[Printer] DEV — 模拟发送打印任务:
-  brand: ${brand}
-  deviceId: ${deviceId}
-  content:
-${content}`,
-      );
-      return;
-    }
+  ): Promise<void> {
+    this.logger.log(
+      `[Printer] 打印任务 — brand: ${brand}, deviceId: ${deviceId}\n${content}`,
+    );
 
+    // All brands: log content for manual printing until real API integration
     switch (brand) {
       case 'yilianyun':
-        this.sendYilianyun(deviceId, apiKey, content);
+        await this.sendYilianyun(deviceId, apiKey, content);
         break;
       case 'feie':
         this.sendFeie(deviceId, apiKey, content);
@@ -317,55 +313,78 @@ ${content}`,
         this.sendShangmi(deviceId, apiKey, content);
         break;
       default:
-        throw new Error(`不支持的打印机品牌: ${brand}`);
+        this.logger.warn(`[Printer] 不支持的打印机品牌: ${brand}，跳过打印`);
     }
   }
 
-  /** 易联云云打印 API */
-  private sendYilianyun(
-    _deviceId: string,
+  /** 易联云云打印 API — 已对接 */
+  private async sendYilianyun(
+    deviceId: string,
     _apiKey: string,
-    _content: string,
-  ): void {
-    const partner = this.config.get<string>('PRINTER_YL_PARTNER') || '';
+    content: string,
+  ): Promise<void> {
+    if (!this.yilianyun.isConfigured()) {
+      this.logger.warn('[Printer] 易联云未配置凭据，跳过打印');
+      return;
+    }
 
-    this.logger.log(
-      `[Printer] 易联云打印 — partner: ${partner}, deviceId: ${_deviceId}`,
+    const originId = `print_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    await this.yilianyun.print(
+      deviceId,
+      this.buildYlContent(content),
+      originId,
     );
-
-    // TODO: 对接易联云 API
-    // POST http://open.10ss.net:8888
-    // 参数: client_id, access_token, machine_code, content, origin_id
-    throw new Error('易联云 API 尚未对接');
   }
 
-  /** 飞鹅云打印 API */
+  /** 将通用打印内容转为易联云排版格式 */
+  private buildYlContent(content: string): string {
+    const lines = content.split('\n');
+    const ylLines: string[] = [];
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+
+      // 检测分隔线: --- 或 ===
+      if (/^[-=]{10,}$/.test(line)) {
+        ylLines.push('--------------------------------');
+        continue;
+      }
+
+      // 检测左右对齐格式: "左文本              右文本"
+      const padMatch = line.match(/^(\S.*\S)\s{4,}(\S.*\S)$/);
+      if (padMatch) {
+        ylLines.push(`<LR>${padMatch[1]},${padMatch[2]}</LR>`);
+        continue;
+      }
+
+      // 检测居中格式（左右有大量空格）
+      if (trimmed && line.length > trimmed.length + 10) {
+        ylLines.push(`<center>${trimmed}</center>`);
+        continue;
+      }
+
+      // 普通行
+      ylLines.push(line);
+    }
+
+    return ylLines.join('\n');
+  }
+
+  /** 飞鹅云打印 API — 待对接 real API */
   private sendFeie(_deviceId: string, _apiKey: string, _content: string): void {
-    const user = this.config.get<string>('PRINTER_FEIE_USER') || '';
-
-    this.logger.log(
-      `[Printer] 飞鹅打印 — user: ${user}, deviceId: ${_deviceId}`,
-    );
-
     // TODO: 对接飞鹅 API
     // POST http://api.feieyun.cn/Api/Open/
     // 参数: user, stime, sig, apiname, sn, content
-    throw new Error('飞鹅 API 尚未对接');
+    this.logger.log('[Printer] 飞鹅 API 尚未对接，内容已通过日志输出');
   }
 
-  /** 商米云打印 API */
+  /** 商米云打印 API — 待对接 real API */
   private sendShangmi(
     _deviceId: string,
     _apiKey: string,
     _content: string,
   ): void {
-    const appId = this.config.get<string>('PRINTER_SM_APP_ID') || '';
-
-    this.logger.log(
-      `[Printer] 商米打印 — appId: ${appId}, deviceId: ${_deviceId}`,
-    );
-
     // TODO: 对接商米 API
-    throw new Error('商米 API 尚未对接');
+    this.logger.log('[Printer] 商米 API 尚未对接，内容已通过日志输出');
   }
 }
