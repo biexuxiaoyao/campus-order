@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotifyService } from '../notify/notify.service';
+import { PaymentService } from '../payment/payment.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { QueryOrderDto } from './dto/query-order.dto';
 
@@ -50,6 +51,7 @@ export class OrderService {
   constructor(
     private prisma: PrismaService,
     private notify: NotifyService,
+    private payment: PaymentService,
   ) {}
 
   /** Create an order from cart items */
@@ -683,47 +685,67 @@ export class OrderService {
       throw new NotFoundException('未找到待处理的退款申请');
     }
 
-    const updatedRefund = await this.prisma.refundRecord.update({
-      where: { id: refund.id },
-      data: {
-        status: approved ? 'approved' : 'rejected',
-        approvedBy: approved ? operatorId : undefined,
-        rejectedReason: approved ? undefined : reason || '审核不通过',
-      },
+    // If rejected, just update the record and return
+    if (!approved) {
+      return this.prisma.refundRecord.update({
+        where: { id: refund.id },
+        data: {
+          status: 'rejected',
+          approvedBy: operatorId,
+          rejectedReason: reason || '审核不通过',
+        },
+      });
+    }
+
+    // Approved: execute refund first (payment.refund uses upsert to update the record)
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      include: { items: true },
     });
 
-    // If approved, restore stock and notify user
-    if (approved) {
-      const order = await this.prisma.order.findUnique({
-        where: { id: orderId },
-        include: { items: true },
-      });
-
-      if (order) {
-        await this.prisma.$transaction(
-          order.items.map((item) =>
-            this.prisma.sku.update({
-              where: { id: item.skuId },
-              data: {
-                availableStock: { increment: item.quantity },
-              },
-            }),
-          ),
-        );
-
-        // Fire-and-forget: notify user of refund approval
-        this.notify
-          .notifyRefundApproved(order.userId, order.tenantId, {
-            orderNo: order.orderNo,
-            totalAmount: refund.amount,
-          })
-          .catch((err) =>
-            this.logger.error(
-              `[Notify] 退款通知发送失败: ${(err as Error).message}`,
-            ),
-          );
-      }
+    if (!order) {
+      throw new NotFoundException('订单不存在');
     }
+
+    // 1. Execute real refund — uses user's original reason, not admin note
+    try {
+      await this.payment.refund(orderId, refund.amount, refund.reason);
+    } catch (err) {
+      this.logger.error(
+        `[approveRefund] 退款执行失败 order=${orderId}: ${(err as Error).message}`,
+      );
+      throw err;
+    }
+
+    // 2. Record the approver on the now-updated refund record
+    const updatedRefund = await this.prisma.refundRecord.update({
+      where: { id: refund.id },
+      data: { approvedBy: operatorId },
+    });
+
+    // 3. Restore inventory
+    await this.prisma.$transaction(
+      order.items.map((item) =>
+        this.prisma.sku.update({
+          where: { id: item.skuId },
+          data: {
+            availableStock: { increment: item.quantity },
+          },
+        }),
+      ),
+    );
+
+    // 4. Fire-and-forget: notify user of refund approval
+    this.notify
+      .notifyRefundApproved(order.userId, order.tenantId, {
+        orderNo: order.orderNo,
+        totalAmount: refund.amount,
+      })
+      .catch((err) =>
+        this.logger.error(
+          `[Notify] 退款通知发送失败: ${(err as Error).message}`,
+        ),
+      );
 
     return updatedRefund;
   }

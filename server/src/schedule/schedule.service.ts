@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotifyService } from '../notify/notify.service';
+import { PaymentService } from '../payment/payment.service';
 
 @Injectable()
 export class ScheduleService {
@@ -10,6 +11,7 @@ export class ScheduleService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notify: NotifyService,
+    private readonly payment: PaymentService,
   ) {}
 
   /**
@@ -28,7 +30,15 @@ export class ScheduleService {
           status: 'pending',
           createdAt: { lt: fifteenMinutesAgo },
         },
-        select: { id: true },
+        include: {
+          payments: {
+            where: { status: 'pending' },
+            select: { id: true, channel: true },
+          },
+          items: {
+            select: { skuId: true, quantity: true },
+          },
+        },
       });
 
       if (expiredOrders.length === 0) {
@@ -39,17 +49,71 @@ export class ScheduleService {
       }
 
       let cancelledCount = 0;
+      let skippedCount = 0;
+      let recoveredCount = 0;
 
       for (const order of expiredOrders) {
         try {
-          const items = await this.prisma.orderItem.findMany({
-            where: { orderId: order.id },
-            select: { skuId: true, quantity: true },
-          });
+          // 如果有 pending 支付记录，主动查询微信支付状态
+          if (order.payments.length > 0) {
+            const hasWechatPayment = order.payments.some(
+              (p) => p.channel === 'wechat',
+            );
+
+            if (hasWechatPayment) {
+              // 主动查询微信订单状态
+              const wechatResult = await this.payment.queryWechatOrder(
+                order.orderNo,
+              );
+
+              if (wechatResult) {
+                if (wechatResult.tradeState === 'SUCCESS') {
+                  // 微信已支付，但回调未到达 — 补偿更新
+                  this.logger.warn(
+                    `[handlePaymentTimeout] Order ${order.id} (${order.orderNo}) paid on WeChat but callback missed. Recovering...`,
+                  );
+                  await this.recoverPaidOrder(order.id, wechatResult);
+                  recoveredCount++;
+                  continue;
+                }
+
+                if (
+                  ['CLOSED', 'REVOKED', 'PAYERROR'].includes(
+                    wechatResult.tradeState,
+                  )
+                ) {
+                  // 微信侧已关闭，可以安全取消
+                  this.logger.log(
+                    `[handlePaymentTimeout] Order ${order.id} WeChat status=${wechatResult.tradeState}, proceeding to cancel.`,
+                  );
+                } else {
+                  // NOTPAY / USERPAYING — 仍在支付中，继续等待
+                  this.logger.log(
+                    `[handlePaymentTimeout] Skipping order ${order.id} — WeChat status=${wechatResult.tradeState}.`,
+                  );
+                  skippedCount++;
+                  continue;
+                }
+              } else {
+                // 查询失败，保守跳过
+                this.logger.warn(
+                  `[handlePaymentTimeout] Skipping order ${order.id} — WeChat query failed.`,
+                );
+                skippedCount++;
+                continue;
+              }
+            } else {
+              // 余额支付没有外部回调，pending 超过 15 分钟视为支付失败，取消订单释放库存
+              this.logger.warn(
+                `[handlePaymentTimeout] Order ${order.id} — balance payment stuck pending > 15min, cancelling.`,
+              );
+              // 继续执行取消逻辑（不 continue，fall through 到下面的取消代码）
+            }
+          }
 
           // Group quantities by SKU (handle potential duplicates within order)
           const skuQuantityMap = new Map<string, number>();
-          for (const item of items) {
+          for (const item of order.items) {
             const current = skuQuantityMap.get(item.skuId) || 0;
             skuQuantityMap.set(item.skuId, current + item.quantity);
           }
@@ -115,7 +179,7 @@ export class ScheduleService {
       }
 
       this.logger.log(
-        `[handlePaymentTimeout] Completed. Cancelled ${cancelledCount} expired orders.`,
+        `[handlePaymentTimeout] Completed. Cancelled ${cancelledCount}, recovered ${recoveredCount} missed callbacks, skipped ${skippedCount}.`,
       );
     } catch (err) {
       this.logger.error(
@@ -126,7 +190,7 @@ export class ScheduleService {
 
   /**
    * Every 1 minute: Query pending orders from last 5 minutes for payment callback compensation.
-   * Stub — will integrate with WeChat payment query API later.
+   * Actively queries WeChat order status to recover missed payment notifications.
    */
   @Cron('*/1 * * * *')
   async handlePaymentCallbackCompensation(): Promise<void> {
@@ -137,36 +201,163 @@ export class ScheduleService {
     try {
       const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
 
-      const pendingOrders = await this.prisma.order.findMany({
+      // Find orders with pending WeChat payment records
+      const pendingPayments = await this.prisma.paymentRecord.findMany({
         where: {
           status: 'pending',
+          channel: 'wechat',
           createdAt: { gte: fiveMinutesAgo },
         },
-        select: { id: true, orderNo: true },
+        include: {
+          order: { select: { id: true, orderNo: true, status: true } },
+        },
       });
 
-      if (pendingOrders.length === 0) {
+      if (pendingPayments.length === 0) {
         this.logger.log(
-          '[handlePaymentCallbackCompensation] No pending orders in last 5 minutes.',
+          '[handlePaymentCallbackCompensation] No pending WeChat payments in last 5 minutes.',
         );
         return;
       }
 
-      // TODO: Integrate with WeChat payment status query API
-      // For now, just log the orders that need verification
-      this.logger.log(
-        `[handlePaymentCallbackCompensation] Found ${pendingOrders.length} orders to verify: ` +
-          pendingOrders.map((o) => o.orderNo).join(', '),
+      let recoveredCount = 0;
+      let stillPendingCount = 0;
+
+      // Separate payments with valid orders from orphaned ones
+      const validPayments = pendingPayments.filter((p) => p.order);
+      for (const p of pendingPayments) {
+        if (!p.order) {
+          this.logger.warn(
+            `[handlePaymentCallbackCompensation] Payment ${p.id} has no order; skipping.`,
+          );
+          stillPendingCount++;
+        }
+      }
+
+      if (validPayments.length === 0) {
+        this.logger.log(
+          `[handlePaymentCallbackCompensation] Completed. Recovered 0, still pending ${stillPendingCount}.`,
+        );
+        return;
+      }
+
+      // Parallel WeChat queries
+      const results = await Promise.allSettled(
+        validPayments.map((p) =>
+          this.payment.queryWechatOrder(p.order!.orderNo).then((r) => ({
+            payment: p,
+            wechatResult: r,
+          })),
+        ),
       );
 
+      for (const result of results) {
+        if (result.status === 'rejected') {
+          stillPendingCount++;
+          continue;
+        }
+
+        const { payment, wechatResult } = result.value;
+
+        if (!wechatResult) {
+          stillPendingCount++;
+          continue;
+        }
+
+        if (wechatResult.tradeState === 'SUCCESS') {
+          try {
+            this.logger.warn(
+              `[handlePaymentCallbackCompensation] Recovering missed callback for ${payment.order!.orderNo}`,
+            );
+            await this.recoverPaidOrder(payment.order!.id, wechatResult);
+            recoveredCount++;
+          } catch (err) {
+            this.logger.error(
+              `[handlePaymentCallbackCompensation] Failed to recover payment ${payment.id}: ${(err as Error).message}`,
+            );
+            stillPendingCount++;
+          }
+        } else if (['NOTPAY', 'USERPAYING'].includes(wechatResult.tradeState)) {
+          stillPendingCount++;
+        }
+        // CLOSED/REVOKED — leave for timeout handler
+      }
+
       this.logger.log(
-        `[handlePaymentCallbackCompensation] Completed. ${pendingOrders.length} orders pending verification.`,
+        `[handlePaymentCallbackCompensation] Completed. Recovered ${recoveredCount}, still pending ${stillPendingCount}.`,
       );
     } catch (err) {
       this.logger.error(
         `[handlePaymentCallbackCompensation] Fatal error: ${(err as Error).message}`,
       );
     }
+  }
+
+  /**
+   * Recover an order that was paid on WeChat but the callback was missed.
+   * Updates the payment record to success and advances the order to 'paid'.
+   */
+  private async recoverPaidOrder(
+    orderId: string,
+    wechatResult: {
+      tradeState: string;
+      transactionId?: string;
+      amount?: number;
+    },
+  ): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      // Update pending payment record to success
+      await tx.paymentRecord.updateMany({
+        where: { orderId, status: 'pending', channel: 'wechat' },
+        data: {
+          status: 'success',
+          transactionId: wechatResult.transactionId ?? null,
+          paidAt: new Date(),
+        },
+      });
+
+      // Advance order status from pending to paid (only if still pending)
+      await tx.order.updateMany({
+        where: { id: orderId, status: 'pending' },
+        data: { status: 'paid' },
+      });
+
+      // Add timeline entry
+      await tx.orderTimeline.create({
+        data: {
+          orderId,
+          status: 'paid',
+          timestamp: new Date(),
+        },
+      });
+    });
+
+    // Fire-and-forget: notify user that payment has been recovered
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      select: {
+        userId: true,
+        tenantId: true,
+        orderNo: true,
+        totalAmount: true,
+      },
+    });
+    if (order) {
+      this.notify
+        .notifyOrderPaid(order.userId, order.tenantId, {
+          orderNo: order.orderNo,
+          totalAmount: order.totalAmount,
+        })
+        .catch((err) =>
+          this.logger.error(
+            `[recoverPaidOrder] 通知发送失败 order=${orderId}: ${(err as Error).message}`,
+          ),
+        );
+    }
+
+    this.logger.log(
+      `[recoverPaidOrder] Order ${orderId} recovered — payment marked as success, order advanced to paid.`,
+    );
   }
 
   /**

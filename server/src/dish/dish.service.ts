@@ -38,8 +38,12 @@ export class DishService {
         name: dto.name,
         imageUrl: dto.imageUrl ?? null,
         unit: dto.unit ?? '份',
-        scheduledPublishAt: dto.scheduledPublishAt ? new Date(dto.scheduledPublishAt) : null,
-        scheduledUnpublishAt: dto.scheduledUnpublishAt ? new Date(dto.scheduledUnpublishAt) : null,
+        scheduledPublishAt: dto.scheduledPublishAt
+          ? new Date(dto.scheduledPublishAt)
+          : null,
+        scheduledUnpublishAt: dto.scheduledUnpublishAt
+          ? new Date(dto.scheduledUnpublishAt)
+          : null,
         status: 'draft',
       },
       include: dishInclude,

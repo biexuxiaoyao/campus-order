@@ -1,5 +1,13 @@
 import {
-  Controller, Get, Post, Put, Body, Param, Query, Req, UseGuards,
+  Controller,
+  Get,
+  Post,
+  Put,
+  Body,
+  Param,
+  Query,
+  Req,
+  UseGuards,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { GroupOrderService } from './group-order.service';
@@ -36,7 +44,9 @@ export class GroupOrderController {
   @Post('group-orders/:id/join')
   @UseGuards(AuthGuard('jwt'))
   async joinPool(
-    @Req() req: any, @Param('id') id: string, @Body() dto: JoinGroupOrderDto,
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() dto: JoinGroupOrderDto,
   ) {
     return this.groupOrderService.joinPool(id, req.user?.userId, dto);
   }
@@ -52,6 +62,10 @@ export class GroupOrderController {
   @Post('group-orders/represent')
   @UseGuards(AuthGuard('jwt'))
   async representOrder(@Req() req: any, @Body() dto: RepresentOrderDto) {
-    return this.groupOrderService.representOrder(req.user?.userId, req.tenantId, dto);
+    return this.groupOrderService.representOrder(
+      req.user?.userId,
+      req.tenantId,
+      dto,
+    );
   }
 }

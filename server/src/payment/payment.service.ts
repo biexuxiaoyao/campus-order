@@ -7,6 +7,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { HttpService } from '@nestjs/axios';
 import { PrismaService } from '../prisma/prisma.service';
+import { PrepaidService } from '../prepaid/prepaid.service';
 import { NotifyService } from '../notify/notify.service';
 import { WechatPayConfig } from './wechat-pay.config';
 import {
@@ -20,7 +21,6 @@ import {
 } from './wechat-pay.types';
 import * as crypto from 'crypto';
 import { firstValueFrom } from 'rxjs';
-import { v4 as uuidv4 } from 'uuid';
 
 @Injectable()
 export class PaymentService {
@@ -33,6 +33,7 @@ export class PaymentService {
     private wechatConfig: WechatPayConfig,
     private config: ConfigService,
     private notify: NotifyService,
+    private prepaidService: PrepaidService,
   ) {}
 
   // ========================= 预支付下单 =========================
@@ -67,13 +68,94 @@ export class PaymentService {
     if (order.userId !== userId) {
       throw new BadRequestException('订单不属于当前用户');
     }
+    if (channel === 'balance' && order.status === 'paid') {
+      const existingPayment = await this.prisma.paymentRecord.findFirst({
+        where: { orderId, channel: 'balance', status: 'success' },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      if (existingPayment) {
+        return {
+          paymentId: existingPayment.id,
+          channel: 'balance',
+        };
+      }
+    }
     if (order.status !== 'pending') {
       throw new BadRequestException(
         '订单状态不允许支付，当前状态：' + order.status,
       );
     }
 
-    // 2. 如果微信支付未配置，返回 mock 数据用于开发调试
+    // 2. 余额支付：在一个事务内原子扣减余额、创建支付记录、更新订单状态
+    if (channel === 'balance') {
+      const result = await this.prisma.$transaction(async (tx) => {
+        // 原子扣减余额（含幂等检查）
+        const { transactionId } = await this.prepaidService.consumeWithTx(
+          tx,
+          userId,
+          order.tenantId,
+          'personal',
+          order.totalAmount,
+          orderId,
+        );
+
+        // 创建支付记录（即时成功）
+        const paymentRecord = await tx.paymentRecord.create({
+          data: {
+            orderId,
+            amount: order.totalAmount,
+            channel: 'balance',
+            status: 'success',
+          },
+        });
+
+        // 更新订单状态
+        await tx.order.update({
+          where: { id: orderId },
+          data: {
+            status: 'paid',
+            paymentMethod: 'balance',
+          },
+        });
+
+        // 添加订单时间线
+        await tx.orderTimeline.create({
+          data: { orderId, status: 'paid' },
+        });
+
+        return {
+          paymentId: paymentRecord.id,
+          transactionId,
+        };
+      });
+
+      this.logger.log(
+        `余额支付成功：订单 ${order.orderNo}，金额 ${order.totalAmount} 分`,
+      );
+
+      // Fire-and-forget: notify user
+      this.notify
+        .notifyOrderPaid(order.userId, order.tenantId, {
+          orderNo: order.orderNo,
+          totalAmount: order.totalAmount,
+          store: { name: '校园订餐' },
+        })
+        .catch((err) =>
+          this.logger.error(
+            `[Notify] 余额支付通知发送失败: ${(err as Error).message}`,
+          ),
+        );
+
+      return {
+        paymentId: result.paymentId,
+        channel: 'balance',
+      };
+    }
+
+    // 3. 微信支付未配置时，返回 mock 数据用于开发调试
+    //    注意：mock 模式下回调通知会被拒绝（防止 mock 支付滥用）
+    //    开发环境可通过 POST /api/prepaid/recharge/confirm 模拟支付确认
     if (!this.wechatConfig.isConfigured && channel === 'wechat') {
       this.logger.warn('微信支付未配置，返回 mock 预支付数据');
       const paymentRecord = await this.prisma.paymentRecord.create({
@@ -96,12 +178,6 @@ export class PaymentService {
         paymentId: paymentRecord.id,
         channel,
       };
-    }
-
-    // 3. 余额支付直接处理
-    if (channel === 'balance') {
-      // TODO: 在预充值模块完成后对接余额扣减
-      throw new BadRequestException('余额支付暂未开放');
     }
 
     // 4. 构建微信支付 JSAPI 下单请求
@@ -172,7 +248,10 @@ export class PaymentService {
   /**
    * 处理微信支付回调通知
    *
-   * 幂等处理：如果已处理过（PaymentRecord 已为 success），直接返回 true。
+   * 安全策略：
+   *   - 微信支付未配置时拒绝所有回调（防止 mock 支付滥用）
+   *   - 幂等处理：如果已处理过，直接返回 true
+   *   - 区分订单支付和充值支付（通过 out_trade_no 前缀）
    */
   async handleNotify(
     body: WechatNotifyBody,
@@ -181,27 +260,57 @@ export class PaymentService {
     timestamp: string,
     nonce: string,
   ): Promise<boolean> {
-    // 1. 验签 — 如果配置不可用，开发环境跳过验签
-    if (this.wechatConfig.isConfigured) {
-      const bodyStr = JSON.stringify(body);
-      const valid = this.verifySignature(
-        bodyStr,
-        signature,
-        serial,
-        timestamp,
-        nonce,
+    // 1. 微信支付未配置时，拒绝所有回调
+    if (!this.wechatConfig.isConfigured) {
+      throw new BadRequestException(
+        '微信支付未配置，无法处理支付回调。开发环境请使用 /api/prepaid/recharge/confirm 确认充值。',
       );
-      if (!valid) {
-        throw new BadRequestException('微信支付回调签名验证失败');
-      }
-    } else {
-      this.logger.warn('微信支付未配置，跳过回调签名验证');
     }
 
-    // 2. 解密 resource
+    // 2. 验签
+    const bodyStr = JSON.stringify(body);
+    const valid = this.verifySignature(
+      bodyStr,
+      signature,
+      serial,
+      timestamp,
+      nonce,
+    );
+    if (!valid) {
+      throw new BadRequestException('微信支付回调签名验证失败');
+    }
+
+    // 3. 解密 resource
     const transaction = this.decryptNotifyResource(body.resource);
 
-    // 3. 查找支付记录（幂等性检查）
+    // 4. 充值支付回调（out_trade_no 以 RECHARGE_ 开头）
+    if (transaction.out_trade_no.startsWith('RECHARGE_')) {
+      const paymentRecordId = transaction.out_trade_no.replace('RECHARGE_', '');
+
+      // 幂等检查
+      const existingPayment = await this.prisma.paymentRecord.findUnique({
+        where: { id: paymentRecordId },
+      });
+      if (!existingPayment) {
+        this.logger.error(`充值支付记录不存在：${paymentRecordId}`);
+        throw new NotFoundException('充值支付记录不存在');
+      }
+      if (existingPayment.status === 'success') {
+        this.logger.log(`充值支付通知幂等：${paymentRecordId} 已处理`);
+        return true;
+      }
+
+      // 确认充值到账
+      await this.prepaidService.confirmRecharge(paymentRecordId);
+
+      this.logger.log(
+        `充值支付成功：paymentRecordId=${paymentRecordId}，金额 ${existingPayment.amount} 分`,
+      );
+      return true;
+    }
+
+    // 5. 订单支付回调（out_trade_no 为订单号）
+    // 幂等检查
     const existing = await this.prisma.paymentRecord.findFirst({
       where: {
         order: { orderNo: transaction.out_trade_no },
@@ -214,7 +323,7 @@ export class PaymentService {
       return true;
     }
 
-    // 4. 查找订单
+    // 查找订单
     const order = await this.prisma.order.findUnique({
       where: { orderNo: transaction.out_trade_no },
     });
@@ -224,7 +333,7 @@ export class PaymentService {
       throw new NotFoundException(`订单 ${transaction.out_trade_no} 不存在`);
     }
 
-    // 5. 更新 PaymentRecord 和 Order
+    // 更新 PaymentRecord 和 Order（在事务中）
     await this.prisma.$transaction(async (tx) => {
       // 更新支付记录
       await tx.paymentRecord.updateMany({
@@ -291,6 +400,42 @@ export class PaymentService {
     return payment;
   }
 
+  /**
+   * 主动查询微信支付订单状态（用于支付补偿/超时核验）
+   * GET /v3/pay/transactions/out-trade-no/{out_trade_no}?mchid={mchid}
+   */
+  async queryWechatOrder(outTradeNo: string): Promise<{
+    tradeState: string;
+    transactionId?: string;
+    amount?: number;
+  } | null> {
+    if (!this.wechatConfig.isConfigured) {
+      this.logger.warn('微信支付未配置，跳过主动查单');
+      return null;
+    }
+
+    try {
+      const path = `/v3/pay/transactions/out-trade-no/${outTradeNo}?mchid=${this.wechatConfig.mchId}`;
+      const result = await this.callWechatApi<WechatTransaction>(
+        'GET',
+        path,
+        null,
+      );
+      return {
+        tradeState: result.trade_state,
+        transactionId: result.transaction_id,
+        amount: result.amount?.total,
+      };
+    } catch (err) {
+      const message =
+        (err as any)?.response?.data?.message || (err as Error).message;
+      this.logger.error(
+        `[queryWechatOrder] 查询微信订单 ${outTradeNo} 失败: ${message}`,
+      );
+      return null;
+    }
+  }
+
   // ========================= 退款 =========================
 
   async refund(orderId: string, amount?: number, reason?: string) {
@@ -316,24 +461,90 @@ export class PaymentService {
       throw new BadRequestException('退款金额不能超过支付金额');
     }
 
-    const outRefundNo = `${order.orderNo}_refund_${Date.now()}`;
+    // 查找是否已有 pending/approved 退款记录（来自商家审批流程），有则复用
+    const existingRefund = await this.prisma.refundRecord.findFirst({
+      where: { orderId, status: { in: ['pending', 'approved'] } },
+      orderBy: { createdAt: 'desc' },
+    });
 
-    // 2. 未配置时 mock
-    if (!this.wechatConfig.isConfigured) {
-      this.logger.warn('微信支付未配置，返回 mock 退款数据');
-      const refundRecord = await this.prisma.refundRecord.create({
+    const upsertRefundRecord = async (status: string) => {
+      if (existingRefund) {
+        return this.prisma.refundRecord.update({
+          where: { id: existingRefund.id },
+          data: {
+            status,
+            paymentId: payment.id,
+            amount: refundAmount,
+            reason: reason ?? existingRefund.reason,
+          },
+        });
+      }
+      return this.prisma.refundRecord.create({
         data: {
           orderId,
           paymentId: payment.id,
           amount: refundAmount,
           reason: reason ?? null,
-          status: 'completed',
+          status,
         },
       });
-      return refundRecord;
+    };
+
+    // 余额支付退款：直接退还至用户余额账户
+    if (payment.channel === 'balance') {
+      await this.prepaidService.refund(
+        order.userId,
+        order.tenantId,
+        refundAmount,
+        reason,
+        order.orderNo, // 幂等键
+      );
+
+      // Atomically write refund record + order status + timeline
+      return this.prisma.$transaction(async (tx) => {
+        const refundRecord = existingRefund
+          ? await tx.refundRecord.update({
+              where: { id: existingRefund.id },
+              data: {
+                status: 'completed',
+                paymentId: payment.id,
+                amount: refundAmount,
+                reason: reason ?? existingRefund.reason,
+              },
+            })
+          : await tx.refundRecord.create({
+              data: {
+                orderId,
+                paymentId: payment.id,
+                amount: refundAmount,
+                reason: reason ?? null,
+                status: 'completed',
+              },
+            });
+
+        await tx.order.update({
+          where: { id: orderId },
+          data: { status: 'refunded' },
+        });
+
+        await tx.orderTimeline.create({
+          data: { orderId, status: 'refunded' },
+        });
+
+        return refundRecord;
+      });
     }
 
-    // 3. 构建退款请求
+    // 微信支付退款
+    const outRefundNo = `${order.orderNo}_refund_${Date.now()}`;
+
+    // 未配置时 mock
+    if (!this.wechatConfig.isConfigured) {
+      this.logger.warn('微信支付未配置，返回 mock 退款数据');
+      return upsertRefundRecord('completed');
+    }
+
+    // 构建退款请求
     const refundRequest: WechatRefundRequest = {
       out_trade_no: order.orderNo,
       out_refund_no: outRefundNo,
@@ -345,49 +556,52 @@ export class PaymentService {
       },
     };
 
-    // 4. 调用微信退款 API（需要 mTLS 证书，这里使用基础签名认证）
+    // 调用微信退款 API
     await this.callWechatApi<WechatRefundResponse>(
       'POST',
       `/v3/refund/domestic/refunds`,
       refundRequest,
     );
 
-    // 5. 创建退款记录
-    const refundRecord = await this.prisma.refundRecord.create({
-      data: {
-        orderId,
-        paymentId: payment.id,
-        amount: refundAmount,
-        reason: reason ?? null,
-        status: 'pending',
-      },
-    });
+    // Atomically write refund record + order status + timeline
+    return this.prisma.$transaction(async (tx) => {
+      const refundRecord = existingRefund
+        ? await tx.refundRecord.update({
+            where: { id: existingRefund.id },
+            data: {
+              status: 'pending',
+              paymentId: payment.id,
+              amount: refundAmount,
+              reason: reason ?? existingRefund.reason,
+            },
+          })
+        : await tx.refundRecord.create({
+            data: {
+              orderId,
+              paymentId: payment.id,
+              amount: refundAmount,
+              reason: reason ?? null,
+              status: 'pending',
+            },
+          });
 
-    // 6. 更新订单状态
-    await this.prisma.order.update({
-      where: { id: orderId },
-      data: { status: 'refunded' },
-    });
+      await tx.order.update({
+        where: { id: orderId },
+        data: { status: 'refunded' },
+      });
 
-    // 7. 添加时间线
-    await this.prisma.orderTimeline.create({
-      data: {
-        orderId,
-        status: 'refunded',
-      },
-    });
+      await tx.orderTimeline.create({
+        data: { orderId, status: 'refunded' },
+      });
 
-    return refundRecord;
+      return refundRecord;
+    });
   }
 
   // ========================= 签名与加密工具 =========================
 
   /**
    * 验证回调签名
-   *
-   * 微信支付 API v3 回调签名算法：
-   *   signedString = TIMESTAMP\nNONCE\nBODY\n
-   *   使用平台证书公钥对 signedString 进行 RSA-SHA256 验签
    */
   verifySignature(
     body: string,
@@ -415,8 +629,6 @@ export class PaymentService {
 
   /**
    * 生成 JSAPI 调起支付签名
-   *
-   * 签名串：appId\ntimeStamp\nnonceStr\npackage\n
    */
   generateWechatSign(params: {
     appId: string;
@@ -451,11 +663,10 @@ export class PaymentService {
     body: unknown,
   ): Promise<T> {
     const url = `${this.wechatPayBaseUrl}${path}`;
-    const bodyStr = JSON.stringify(body);
+    const bodyStr = body == null ? '' : JSON.stringify(body);
     const timestamp = String(Math.floor(Date.now() / 1000));
     const nonceStr = this.generateNonceStr();
 
-    // 构建签名串
     const signMessage = `${method}\n${path}\n${timestamp}\n${nonceStr}\n${bodyStr}\n`;
     const signature = this.signMessage(signMessage);
 
@@ -506,12 +717,6 @@ export class PaymentService {
 
   /**
    * 解密回调通知中的加密资源
-   *
-   * AEAD_AES_256_GCM 解密：
-   *   ciphertext = base64_decode(resource.ciphertext)
-   *   associated_data = resource.associated_data
-   *   nonce = resource.nonce
-   *   key = APIv3密钥
    */
   private decryptNotifyResource(resource: {
     ciphertext: string;
@@ -557,7 +762,7 @@ export class PaymentService {
    * 生成随机 nonce 字符串
    */
   private generateNonceStr(): string {
-    return uuidv4().replace(/-/g, '');
+    return crypto.randomUUID().replace(/-/g, '');
   }
 
   /**

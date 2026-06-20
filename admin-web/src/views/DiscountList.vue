@@ -117,7 +117,10 @@
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import http from '@/api'
+import { useAppStore } from '@/stores/app'
 import type { FormInstance, FormRules } from 'element-plus'
+
+const appStore = useAppStore()
 
 const list = ref<any[]>([])
 const total = ref(0)
@@ -214,10 +217,10 @@ async function handleSubmit() {
     }
 
     if (isEdit.value && editingId.value) {
-      await http.put(`/discounts/${editingId.value}`, data)
+      await http.put(`/merchant/discounts/${editingId.value}`, data)
       ElMessage.success('编辑成功')
     } else {
-      await http.post('/discounts', data)
+      await http.post(`/merchant/stores/${appStore.currentStoreId}/discounts`, data)
       ElMessage.success('创建成功')
     }
     dialogVisible.value = false
@@ -231,7 +234,7 @@ async function handleSubmit() {
 
 async function handleDelete(id: number) {
   try {
-    await http.delete(`/discounts/${id}`)
+    await http.delete(`/merchant/discounts/${id}`)
     ElMessage.success('删除成功')
     loadData()
   } catch {
@@ -242,7 +245,7 @@ async function handleDelete(id: number) {
 async function loadData() {
   loading.value = true
   try {
-    const res: any = await http.get('/discounts', { params: query })
+    const res: any = await http.get(`/merchant/stores/${appStore.currentStoreId}/discounts`, { params: query })
     list.value = res?.list || res?.items || []
     total.value = res?.total || res?.count || 0
   } catch {

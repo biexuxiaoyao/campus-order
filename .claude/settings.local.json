@@ -129,7 +129,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash -c 'echo \"[HARNESS] 文件已修改。验证清单: ① Read 确认变更 ② cd server && npm run format ③ cd server && npm run lint ④ 如改业务逻辑则 cd server && npm test ⑤ 如改前端则 cd admin-web && npm run build\"'"
+            "command": "bash -c 'echo \"[HARNESS] 文件已修改。验证清单: ① Read 确认变更 ② 后端改动跑 cd server && npm run build && npm test -- --runInBand --forceExit ③ 保留 Prisma URL allowPublicKeyRetrieval/dotenv config ④ 保留 tsconfig include/exclude 扫描边界 ⑤ Service 依赖变化同步 spec mock ⑥ 如改前端则 cd admin-web && npm run build\"'"
           }
         ]
       }
@@ -139,7 +139,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash -c 'echo \"[HARNESS] 任务结束前自检: ① 所有用户需求已满足? ② npm test 通过? ③ 无遗留未提交变更?\"'"
+            "command": "bash -c 'echo \"[HARNESS] 任务结束前自检: ① 用户需求已满足? ② 后端 build/test 通过? ③ 启动链路已 smoke test? ④ 无遗留 node/jest 进程或 3000 端口占用? ⑤ 无 .env 密钥提交风险?\"'"
           }
         ]
       }

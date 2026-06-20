@@ -2,10 +2,16 @@ import { Module } from '@nestjs/common';
 import { ScheduleModule } from '@nestjs/schedule';
 import { PrismaModule } from '../prisma/prisma.module';
 import { NotifyModule } from '../notify/notify.module';
+import { PaymentModule } from '../payment/payment.module';
 import { ScheduleService } from './schedule.service';
 
 @Module({
-  imports: [ScheduleModule.forRoot(), PrismaModule, NotifyModule],
+  imports: [
+    ScheduleModule.forRoot(),
+    PrismaModule,
+    NotifyModule,
+    PaymentModule,
+  ],
   providers: [ScheduleService],
 })
 export class AppScheduleModule {}

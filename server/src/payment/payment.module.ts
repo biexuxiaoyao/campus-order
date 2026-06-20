@@ -3,6 +3,7 @@ import { HttpModule } from '@nestjs/axios';
 import { PassportModule } from '@nestjs/passport';
 import { PrismaModule } from '../prisma/prisma.module';
 import { NotifyModule } from '../notify/notify.module';
+import { PrepaidModule } from '../prepaid/prepaid.module';
 import { PaymentService } from './payment.service';
 import { PaymentController } from './payment.controller';
 import { WechatPayConfig } from './wechat-pay.config';
@@ -16,6 +17,7 @@ import { WechatPayConfig } from './wechat-pay.config';
     PassportModule.register({ defaultStrategy: 'jwt' }),
     PrismaModule,
     NotifyModule,
+    PrepaidModule,
   ],
   controllers: [PaymentController],
   providers: [PaymentService, WechatPayConfig],

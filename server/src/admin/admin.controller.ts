@@ -133,7 +133,10 @@ export class AdminController {
     // Trigger packager asynchronously (don't block response)
     if (result.deliveryId) {
       this.packager.executeDelivery(result.deliveryId).catch((err) => {
-        console.error(`[Packager] Delivery ${result.deliveryId} failed:`, err.message);
+        console.error(
+          `[Packager] Delivery ${result.deliveryId} failed:`,
+          err.message,
+        );
       });
     }
     return result;
@@ -144,7 +147,9 @@ export class AdminController {
   async downloadDelivery(@Param('id') id: string, @Res() res: Response) {
     const filePath = this.packager.getDownloadPath(id);
     if (!require('fs').existsSync(filePath)) {
-      res.status(404).json({ code: 'NOT_FOUND', message: '交付包尚未生成或已过期' });
+      res
+        .status(404)
+        .json({ code: 'NOT_FOUND', message: '交付包尚未生成或已过期' });
       return;
     }
     const file = createReadStream(filePath);
@@ -165,7 +170,10 @@ export class AdminController {
 
   /** PUT /api/admin/tenants/:id/documents — Update review documents */
   @Put('tenants/:id/documents')
-  async updateDocuments(@Param('id') id: string, @Body() dto: UpdateDocumentsDto) {
+  async updateDocuments(
+    @Param('id') id: string,
+    @Body() dto: UpdateDocumentsDto,
+  ) {
     return this.admin.updateDocuments(id, dto);
   }
 

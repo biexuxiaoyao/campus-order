@@ -71,7 +71,7 @@ cd miniprogram && node node_modules/@dcloudio/vite-plugin-uni/bin/uni.js build -
 ## 环境变量 (server/.env)
 
 ```env
-DATABASE_URL=mysql://root:root123456@localhost:3306/campus_order?charset=utf8mb4
+DATABASE_URL=mysql://root:root123456@localhost:3306/campus_order?charset=utf8mb4&allowPublicKeyRetrieval=true
 REDIS_URL=redis://localhost:6379
 JWT_SECRET=dev-jwt-secret-change-in-production
 WECHAT_APP_ID=wx8ebfaf4a045bf7c3
@@ -83,6 +83,12 @@ PORT=3000
 ## 已知注意事项
 
 - **Prisma 7**: 构造函数必须传入 `adapter`（本项目用 `PrismaMariaDb`）
+- **MySQL 8 + Prisma 7**: `DATABASE_URL` 必须带 `allowPublicKeyRetrieval=true`；`prisma.config.ts` 必须 `import "dotenv/config";`，否则 Prisma CLI/测试可能读不到 `.env`
+- **TypeScript 扫描边界**: `server/tsconfig.json` 和 `server/tsconfig.build.json` 必须显式维护 `include/exclude`，不要让 TS/Jest 默认扫描整个 `server/` 目录；必须排除 `node_modules`、`dist`、`coverage`、`deliveries`、`uploads`
+- **Jest 卡死排查**: 如果 `npm test` 长时间无输出，先检查 tsconfig 扫描范围、残留 node/jest 进程、ESM-only 依赖，而不是直接重跑或扩大超时时间
+- **Jest + CommonJS**: 后端测试运行在 CommonJS/Jest 环境，避免在业务代码中直接引入 ESM-only 包；例如随机 ID 优先用 Node 内置 `crypto.randomUUID()`
+- **真实数据库测试隔离**: 单测会连接本地 MySQL，测试数据的 id、openid、幂等键、referenceId 必须带 `Date.now()` 或测试专属前缀，不能使用 `order-1`、`ref-test-1` 这类全局固定键
+- **测试依赖同步**: Service 构造函数新增依赖或新增 `NotifyService` 方法后，必须同步更新对应 `.spec.ts` 的 providers/mock
 - **Admin Login**: 登录时不需要 `x-tenant-id` header（后端自动查找 admin 所属租户）
 - **uni-app 构建**: 需用 `node node_modules/@dcloudio/vite-plugin-uni/bin/uni.js build -p mp-weixin`，不能用 npx
 - **小程序开发**: 微信开发者工具需要开启 设置 → 安全设置 → 服务端口
@@ -166,10 +172,40 @@ Edit/Write → Read 确认 → 按修改位置执行验证
 
 | 修改位置 | 验证命令 |
 |---------|---------|
-| `server/` | `cd server && npm run format && npm run lint && npm test` |
+| `server/` | `cd server && npm run build && npm test -- --runInBand --forceExit` |
 | `admin-web/` | `cd admin-web && npm run build` |
 | `miniprogram/` | `cd miniprogram && node node_modules/@dcloudio/vite-plugin-uni/bin/uni.js build -p mp-weixin` |
 | `packager/` | `cd packager && npm test` |
+
+### 后端启动/测试防故障规则（强制）
+
+后端相关修改完成前，必须执行以下检查：
+
+1. `server/tsconfig.json` 保留显式 `include/exclude`，不要删除对 `coverage`、`deliveries`、`uploads` 的排除。
+2. `server/tsconfig.build.json` 只包含 `src/**/*.ts` 和 `prisma.config.ts`，并排除 `**/*.spec.ts`。
+3. `server/.env.example` 中的 `DATABASE_URL` 保留 `allowPublicKeyRetrieval=true`。
+4. `server/prisma.config.ts` 保留 `import "dotenv/config";`。
+5. 修改 `package.json` 依赖后，检查是否引入 ESM-only 包；如影响 Jest，优先使用 Node 内置 API 或调整测试配置。
+6. 修改 Service 构造函数或通知方法后，立即搜索并更新对应测试 mock：`rg -n "new依赖名|NotifyService|mock.*Service" server/src`.
+7. 新增/修改真实数据库测试时，测试数据和幂等键必须唯一化；测试清理必须按外键依赖从子表到父表删除。
+8. 声明后端完成前至少跑：
+
+```bash
+cd server && npm run build
+cd server && npm test -- --runInBand --forceExit
+```
+
+如涉及启动链路，再执行一次 smoke test：
+
+```bash
+cd server && npm run build
+node dist/src/main.js
+# 另一个终端:
+curl -H "x-app-id: wx8ebfaf4a045bf7c3" http://localhost:3000/api/brand/config
+curl -H "x-app-id: wx8ebfaf4a045bf7c3" http://localhost:3000/api/dishes/categories
+```
+
+smoke test 后必须停止本次启动的 node 进程，确认 `localhost:3000` 没有被遗留占用。
 
 ### Specs 参考文档
 
@@ -187,7 +223,7 @@ Edit/Write → Read 确认 → 按修改位置执行验证
 
 | 项目 | 测试数 | 命令 |
 |------|--------|------|
-| server | **131 tests / 11 suites** | `cd server && npm test -- --forceExit` |
+| server | **140 tests / 12 suites** | `cd server && npm test -- --runInBand --forceExit` |
 | packager | 14 tests | `cd packager && npm test` |
 | admin-web | build check (vue-tsc) | `cd admin-web && npm run build` |
 | miniprogram | build check | `cd miniprogram && node node_modules/@dcloudio/vite-plugin-uni/bin/uni.js build -p mp-weixin` |
@@ -202,8 +238,8 @@ GitHub Actions (`.github/workflows/ci.yml`): 每次 push/PR 自动运行全部�
 
 ```bash
 # === 后端 (server/) ===
-cd server && npm run format && npm run lint && npm test -- --forceExit   # 完整验证链
-cd server && npm test -- --forceExit                                      # 仅单元测试 (131 cases)
+cd server && npm run build && npm test -- --runInBand --forceExit         # 后端完整验证链
+cd server && npm test -- --runInBand --forceExit                          # 仅单元测试 (140 cases)
 cd server && npm run test:cov                                             # 覆盖率报告
 cd server && npm run start:dev                                            # 启动开发服务器
 

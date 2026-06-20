@@ -77,10 +77,10 @@ export class CouponService {
     const claimedIds = new Set(userCoupons.map((uc) => uc.templateId));
 
     return templates.filter((t) => {
-      if (claimedIds.has(t.id)) return false;               // 已领取
-      if (t.usedQty >= t.totalQty) return false;             // 库存耗尽
+      if (claimedIds.has(t.id)) return false; // 已领取
+      if (t.usedQty >= t.totalQty) return false; // 库存耗尽
       if (t.startAt && new Date(t.startAt) > now) return false; // 未开始
-      if (t.endAt && new Date(t.endAt) < now) return false;     // 已过期
+      if (t.endAt && new Date(t.endAt) < now) return false; // 已过期
       return true;
     });
   }

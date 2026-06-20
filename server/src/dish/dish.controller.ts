@@ -114,12 +114,13 @@ export class DishController {
 
   @Public()
   @Get('api/dishes')
-  async publicList(
-    @Req() req: any,
-    @Query() query: QueryDishDto,
-  ) {
+  async publicList(@Req() req: any, @Query() query: QueryDishDto) {
     const tenantId = req.tenantId;
-    return this.dish.findPublished(tenantId, query.storeId || 'demo-store-001', query);
+    return this.dish.findPublished(
+      tenantId,
+      query.storeId || 'demo-store-001',
+      query,
+    );
   }
 
   @Public()

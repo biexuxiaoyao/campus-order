@@ -205,7 +205,7 @@ function viewDetail(row: any) {
 async function loadData() {
   loading.value = true
   try {
-    const res: any = await http.get('/audit-logs', { params: query })
+    const res: any = await http.get('/merchant/audit-logs', { params: query })
     list.value = res?.list || res?.items || []
     total.value = res?.total || res?.count || 0
   } catch {

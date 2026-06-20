@@ -13,10 +13,14 @@ describe('BrandService', () => {
     }).compile();
     service = module.get<BrandService>(BrandService);
     prisma = module.get<PrismaService>(PrismaService);
-    const demo = await prisma.tenant.findFirst({ where: { appId: 'wx8ebfaf4a045bf7c3' } });
+    const demo = await prisma.tenant.findFirst({
+      where: { appId: 'wx8ebfaf4a045bf7c3' },
+    });
     TENANT_ID = demo!.id;
   });
-  afterAll(async () => { await prisma.$disconnect(); });
+  afterAll(async () => {
+    await prisma.$disconnect();
+  });
 
   describe('getConfig', () => {
     it('should return config for existing tenant', async () => {
@@ -42,7 +46,11 @@ describe('BrandService', () => {
 
   describe('updateConfig', () => {
     it('should upsert brand config', async () => {
-      const config = await service.updateConfig(TENANT_ID, { name: '测试品牌', themeColor: '#FF0000', hours: '10:00-22:00' });
+      const config = await service.updateConfig(TENANT_ID, {
+        name: '测试品牌',
+        themeColor: '#FF0000',
+        hours: '10:00-22:00',
+      });
       expect((config as any).name).toBe('测试品牌');
       expect((config as any).themeColor).toBe('#FF0000');
 
@@ -53,7 +61,9 @@ describe('BrandService', () => {
     it('should reject banners exceeding limit (DTO validation)', async () => {
       // DTO validates max 10 banners, but service just merges
       // The validation is at the controller/pipe layer
-      const config = await service.updateConfig(TENANT_ID, { banners: ['b1', 'b2'] });
+      const config = await service.updateConfig(TENANT_ID, {
+        banners: ['b1', 'b2'],
+      });
       expect((config as any).banners).toEqual(['b1', 'b2']);
     });
   });

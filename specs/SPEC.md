@@ -6,6 +6,7 @@
 
 | 文档 | 内容 | 何时读取 |
 |---|---|---|
+| [PRODUCT-STRATEGY-SPEC.md](PRODUCT-STRATEGY-SPEC.md) | 产品成功定义、首批客户画像、版本拆解、上线交付、套餐映射 | 排期、裁剪、验收、销售化决策时必读 |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | 系统架构、技术栈、多租户设计、部署拓扑 | 项目初始化时必读 |
 | [DATA-MODEL.md](DATA-MODEL.md) | 全部数据库表、字段、关系、索引策略 | 编写 Migration 时必读 |
 | [API-SPEC.md](API-SPEC.md) | 全部 REST API 端点、请求/响应格式、错误码 | 编写后端接口时必读 |
@@ -46,3 +47,4 @@
 ## 参考文档
 
 - 完整 PRD: `docs/PRD.md`
+- 产品成功定义与需求拆解: `specs/PRODUCT-STRATEGY-SPEC.md`

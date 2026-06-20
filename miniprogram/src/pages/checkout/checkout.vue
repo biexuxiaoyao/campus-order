@@ -59,20 +59,21 @@ async function onSubmit() {
       paymentMethod: paymentMethod.value,
     });
 
-    // 如果选择微信支付，调起支付
-    if (paymentMethod.value === 'wechat') {
-      try {
-        const payParams = await prepay(order.id);
-        // 调起微信支付
+    // 调用支付预下单（微信/余额统一走 prepay）
+    try {
+      const payResult = await prepay(order.id, paymentMethod.value);
+
+      if (paymentMethod.value === 'wechat' && payResult.wxJSAPIParams) {
+        // 微信支付：解包 JSAPI 参数调起支付
+        const jsapi = payResult.wxJSAPIParams;
         uni.requestPayment({
           provider: 'wxpay',
-          timeStamp: payParams.timeStamp,
-          nonceStr: payParams.nonceStr,
-          package: payParams.package,
-          signType: payParams.signType,
-          paySign: payParams.paySign,
+          timeStamp: jsapi.timeStamp,
+          nonceStr: jsapi.nonceStr,
+          package: jsapi.package,
+          signType: jsapi.signType,
+          paySign: jsapi.paySign,
           success: () => {
-            // 清空购物车
             cartStore.clearCart();
             uni.redirectTo({
               url: `/pages/order-detail/order-detail?id=${order.id}`,
@@ -85,16 +86,17 @@ async function onSubmit() {
             });
           },
         });
-      } catch (e) {
-        // 支付预下单失败，仍然跳转订单详情
+      } else {
+        // 余额支付（后端已原子扣减余额 + 更新订单状态）
         await cartStore.clearCart();
         uni.redirectTo({
           url: `/pages/order-detail/order-detail?id=${order.id}`,
         });
       }
-    } else {
-      // 余额支付
-      await cartStore.clearCart();
+    } catch (e) {
+      // 支付预下单失败，不清空购物车，允许用户重试支付
+      console.error('[Checkout] 支付预下单失败', e);
+      uni.showToast({ title: '支付失败，请重试', icon: 'none' });
       uni.redirectTo({
         url: `/pages/order-detail/order-detail?id=${order.id}`,
       });

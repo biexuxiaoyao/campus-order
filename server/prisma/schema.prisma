@@ -334,14 +334,15 @@ model OrderTimeline {
 
 model PaymentRecord {
   id            String   @id @default(uuid())
-  orderId       String
+  orderId       String? // null for prepaid recharge payments
   transactionId String?
   amount        Int
   channel       String // wechat, balance
   status        String // pending, success, failed
   createdAt     DateTime @default(now())
 
-  order Order @relation(fields: [orderId], references: [id])
+  order              Order?               @relation(fields: [orderId], references: [id])
+  prepaidTransaction PrepaidTransaction[]
 }
 
 model RefundRecord {
@@ -419,15 +420,18 @@ model PrepaidAccount {
 }
 
 model PrepaidTransaction {
-  id           String   @id @default(uuid())
-  accountId    String
-  type         String // purchase, consume, refund
-  amount       Int
-  balanceAfter Int
-  channel      String?
-  createdAt    DateTime @default(now())
+  id              String   @id @default(uuid())
+  accountId       String
+  type            String   // purchase, consume, refund
+  amount          Int
+  balanceAfter    Int
+  channel         String?
+  status          String   @default("completed") // pending, completed, failed
+  paymentRecordId String?  // FK to PaymentRecord (set for purchase type)
+  createdAt       DateTime @default(now())
 
-  account PrepaidAccount @relation(fields: [accountId], references: [id])
+  account       PrepaidAccount @relation(fields: [accountId], references: [id])
+  paymentRecord PaymentRecord? @relation(fields: [paymentRecordId], references: [id])
 }
 
 // ========== 折扣/积分/优惠券 ==========

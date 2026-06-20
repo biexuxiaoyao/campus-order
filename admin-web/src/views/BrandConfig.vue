@@ -129,7 +129,7 @@ async function handleSave() {
   if (!valid) return
   saving.value = true
   try {
-    await http.put('/brand', { ...form })
+    await http.put('/brand/config', { ...form })
     ElMessage.success('品牌配置保存成功')
   } catch {
     // handled by interceptor
@@ -141,7 +141,7 @@ async function handleSave() {
 async function loadConfig() {
   loading.value = true
   try {
-    const res: any = await http.get('/brand')
+    const res: any = await http.get('/brand/config')
     if (res) {
       form.storeName = res.storeName || ''
       form.logo = res.logo || ''

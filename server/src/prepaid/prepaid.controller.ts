@@ -1,4 +1,12 @@
-import { Controller, Get, Post, Body, Query, Req, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Query,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { PrepaidService } from './prepaid.service';
 import { RechargeDto } from './dto/recharge.dto';
@@ -17,6 +25,14 @@ export class PrepaidController {
   @Post('recharge')
   async recharge(@Req() req: any, @Body() dto: RechargeDto) {
     return this.prepaid.recharge(req.user?.userId, req.tenantId, dto);
+  }
+
+  /**
+   * 确认充值到账（由支付回调触发；开发环境下前端可直接调用以模拟支付成功）
+   */
+  @Post('recharge/confirm')
+  async confirmRecharge(@Body() body: { paymentRecordId: string }) {
+    return this.prepaid.confirmRecharge(body.paymentRecordId);
   }
 
   @Get('transactions')

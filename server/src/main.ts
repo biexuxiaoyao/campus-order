@@ -16,9 +16,11 @@ async function bootstrap() {
   });
 
   // 全局校验管道
-  app.useGlobalPipes(new ValidationPipe({
-    transform: true,
-  }));
+  app.useGlobalPipes(
+    new ValidationPipe({
+      transform: true,
+    }),
+  );
 
   // CORS - 仅允许已配置的域名
   app.enableCors({

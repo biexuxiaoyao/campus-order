@@ -139,7 +139,7 @@ const productForm = reactive({
 async function saveRule() {
   ruleSaving.value = true
   try {
-    await http.put('/points/rules', { ...ruleForm })
+    await http.put('/merchant/points/rules', { ...ruleForm })
     ElMessage.success('积分规则保存成功')
   } catch {
     // handled by interceptor
@@ -173,10 +173,10 @@ async function saveProduct() {
   productSaving.value = true
   try {
     if (productIsEdit.value && productEditingId.value) {
-      await http.put(`/points/products/${productEditingId.value}`, { ...productForm })
+      await http.put(`/merchant/points/products/${productEditingId.value}`, { ...productForm })
       ElMessage.success('编辑成功')
     } else {
-      await http.post('/points/products', { ...productForm })
+      await http.post('/merchant/points/products', { ...productForm })
       ElMessage.success('创建成功')
     }
     productVisible.value = false
@@ -190,7 +190,7 @@ async function saveProduct() {
 
 async function deleteProduct(id: number) {
   try {
-    await http.delete(`/points/products/${id}`)
+    await http.delete(`/merchant/points/products/${id}`)
     ElMessage.success('删除成功')
     loadProducts()
   } catch {
@@ -200,7 +200,7 @@ async function deleteProduct(id: number) {
 
 async function loadProducts() {
   try {
-    const res: any = await http.get('/points/products')
+    const res: any = await http.get('/merchant/points/products')
     products.value = res?.list || res?.items || []
   } catch {
     products.value = []
@@ -209,7 +209,7 @@ async function loadProducts() {
 
 async function loadRules() {
   try {
-    const res: any = await http.get('/points/rules')
+    const res: any = await http.get('/merchant/points/rules')
     if (res) {
       ruleForm.enabled = res.enabled ?? true
       ruleForm.earnRate = res.earnRate ?? 1

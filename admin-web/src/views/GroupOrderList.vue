@@ -211,7 +211,7 @@ function viewDetail(row: any) {
 
 async function handleCancel(row: any) {
   try {
-    await http.put(`/group-orders/${row.id}/cancel`)
+    await http.put(`/group-orders/${row.id}/close`)
     ElMessage.success('已取消')
     loadData()
   } catch {

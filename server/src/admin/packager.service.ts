@@ -10,17 +10,17 @@ export class PackagerService {
 
   /** Module → server source directories to include/exclude */
   private static MODULE_DIRS: Record<string, string[]> = {
-    'group-meal':    ['src/group-order'],
-    prepaid:         ['src/prepaid'],
-    discount:        ['src/discount'],
-    points:          ['src/points'],
-    coupon:          ['src/coupon'],
-    printer:         ['src/printer'],
-    'push-notify':   ['src/notify'],
-    'advanced-stats':[],
-    'dine-in':       [],
-    'delivery':      [],
-    base:            [],
+    'group-meal': ['src/group-order'],
+    prepaid: ['src/prepaid'],
+    discount: ['src/discount'],
+    points: ['src/points'],
+    coupon: ['src/coupon'],
+    printer: ['src/printer'],
+    'push-notify': ['src/notify'],
+    'advanced-stats': [],
+    'dine-in': [],
+    delivery: [],
+    base: [],
   };
 
   /**
@@ -28,7 +28,9 @@ export class PackagerService {
    * Copies server/src, strips unpurchased module dirs, injects watermarks,
    * generates deploy config, zips everything.
    */
-  async executeDelivery(deliveryId: string): Promise<{ success: boolean; outputZip?: string; error?: string }> {
+  async executeDelivery(
+    deliveryId: string,
+  ): Promise<{ success: boolean; outputZip?: string; error?: string }> {
     const delivery = await this.prisma.sourceDelivery.findUnique({
       where: { id: deliveryId },
       include: { tenant: true },
@@ -52,7 +54,13 @@ export class PackagerService {
 
       // ── 1. Copy server source (skip node_modules, dist, .git, deliveries) ──
       this.copyDir(path.join(projectRoot, 'server'), sourceDir, {
-        skip: new Set(['node_modules', 'dist', '.git', 'deliveries', '.claude']),
+        skip: new Set([
+          'node_modules',
+          'dist',
+          '.git',
+          'deliveries',
+          '.claude',
+        ]),
       });
 
       // ── 2. Strip unpurchased module directories ──
@@ -94,52 +102,61 @@ export class PackagerService {
 
       // docker-compose
       const dbName = `campus_${tenant.id.substring(0, 8)}`;
-      fs.writeFileSync(path.join(deployDir, 'docker-compose.yml'), [
-        'version: "3.8"',
-        'services:',
-        '  mysql:',
-        '    image: mysql:8.0',
-        '    environment:',
-        `      MYSQL_ROOT_PASSWORD: \${DB_ROOT_PASSWORD:-changeme}`,
-        `      MYSQL_DATABASE: ${dbName}`,
-        '    volumes:',
-        '      - mysql_data:/var/lib/mysql',
-        '      - ./init.sql:/docker-entrypoint-initdb.d/init.sql',
-        '  app:',
-        '    build: ./server',
-        '    ports:',
-        '      - "3000:3000"',
-        '    depends_on:',
-        '      - mysql',
-        '    environment:',
-        `      DATABASE_URL: mysql://root:\${DB_ROOT_PASSWORD:-changeme}@mysql:3306/${dbName}?charset=utf8mb4`,
-        '      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}',
-        'volumes:',
-        '  mysql_data:',
-      ].join('\n'));
+      fs.writeFileSync(
+        path.join(deployDir, 'docker-compose.yml'),
+        [
+          'version: "3.8"',
+          'services:',
+          '  mysql:',
+          '    image: mysql:8.0',
+          '    environment:',
+          `      MYSQL_ROOT_PASSWORD: \${DB_ROOT_PASSWORD:-changeme}`,
+          `      MYSQL_DATABASE: ${dbName}`,
+          '    volumes:',
+          '      - mysql_data:/var/lib/mysql',
+          '      - ./init.sql:/docker-entrypoint-initdb.d/init.sql',
+          '  app:',
+          '    build: ./server',
+          '    ports:',
+          '      - "3000:3000"',
+          '    depends_on:',
+          '      - mysql',
+          '    environment:',
+          `      DATABASE_URL: mysql://root:\${DB_ROOT_PASSWORD:-changeme}@mysql:3306/${dbName}?charset=utf8mb4`,
+          '      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}',
+          'volumes:',
+          '  mysql_data:',
+        ].join('\n'),
+      );
 
       // README
-      fs.writeFileSync(path.join(outputDir, 'README.md'), [
-        `# ${tenant.name} — 点餐系统源码交付包`,
-        '',
-        `- 交付版本: ${delivery.version}`,
-        `- 交付日期: ${new Date().toISOString().split('T')[0]}`,
-        `- 水印ID: ${delivery.watermarkId}`,
-        `- 包含模块: ${moduleSnapshot.join(', ')}`,
-        '',
-        '## 部署',
-        '1. 安装 Docker + Docker Compose',
-        '2. 设置环境变量 DB_ROOT_PASSWORD / JWT_SECRET',
-        '3. `docker-compose up -d`',
-        '4. 管理后台: http://your-server:3000/admin',
-      ].join('\n'));
+      fs.writeFileSync(
+        path.join(outputDir, 'README.md'),
+        [
+          `# ${tenant.name} — 点餐系统源码交付包`,
+          '',
+          `- 交付版本: ${delivery.version}`,
+          `- 交付日期: ${new Date().toISOString().split('T')[0]}`,
+          `- 水印ID: ${delivery.watermarkId}`,
+          `- 包含模块: ${moduleSnapshot.join(', ')}`,
+          '',
+          '## 部署',
+          '1. 安装 Docker + Docker Compose',
+          '2. 设置环境变量 DB_ROOT_PASSWORD / JWT_SECRET',
+          '3. `docker-compose up -d`',
+          '4. 管理后台: http://your-server:3000/admin',
+        ].join('\n'),
+      );
 
       // ── 5. Zip ──
       const zipPath = path.join(deliveriesDir, `${deliveryId}.zip`);
       await this.createZip(outputDir, zipPath);
 
       // ── 6. Checksum + update ──
-      const checksum = crypto.createHash('sha256').update(fs.readFileSync(zipPath)).digest('hex');
+      const checksum = crypto
+        .createHash('sha256')
+        .update(fs.readFileSync(zipPath))
+        .digest('hex');
 
       await this.prisma.sourceDelivery.update({
         where: { id: deliveryId },
@@ -170,7 +187,11 @@ export class PackagerService {
 
   // ── Helpers ──
 
-  private copyDir(src: string, dest: string, opts?: { skip?: Set<string> }): void {
+  private copyDir(
+    src: string,
+    dest: string,
+    opts?: { skip?: Set<string> },
+  ): void {
     const skip = opts?.skip || new Set();
     fs.mkdirSync(dest, { recursive: true });
     for (const entry of fs.readdirSync(src, { withFileTypes: true })) {

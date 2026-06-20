@@ -1,4 +1,10 @@
-import { IsString, IsOptional, IsInt, IsDateString, Min } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsInt,
+  IsDateString,
+  Min,
+} from 'class-validator';
 
 export class CreateDishDto {
   @IsString()
@@ -18,12 +24,12 @@ export class CreateDishDto {
   @IsOptional()
   @IsInt()
   @Min(0)
-  price?: number;  // 默认SKU价格（分），不传则生成price=0的SKU
+  price?: number; // 默认SKU价格（分），不传则生成price=0的SKU
 
   @IsOptional()
   @IsInt()
   @Min(0)
-  stock?: number;  // 默认SKU库存，默认0
+  stock?: number; // 默认SKU库存，默认0
 
   @IsOptional()
   @IsDateString()

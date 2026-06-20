@@ -285,7 +285,9 @@ export class AdminService {
       const allModules = await this.prisma.module.findMany({
         where: { id: { in: toAdd } },
       });
-      const priceMap = new Map(allModules.map((m) => [m.id, m.priceSourceCode || 0]));
+      const priceMap = new Map(
+        allModules.map((m) => [m.id, m.priceSourceCode || 0]),
+      );
       await this.prisma.modulePurchase.createMany({
         data: toAdd.map((moduleId) => ({
           tenantId,
@@ -397,7 +399,9 @@ export class AdminService {
     ]);
 
     // Resolve which tenants the top orders belong to
-    const orderIds = topTenantsRaw.map((r) => r.orderId);
+    const orderIds = topTenantsRaw
+      .map((r) => r.orderId)
+      .filter((id): id is string => id !== null);
     const orders = await this.prisma.order.findMany({
       where: { id: { in: orderIds } },
       select: { id: true, tenantId: true, totalAmount: true },
@@ -458,7 +462,10 @@ export class AdminService {
       throw new ForbiddenException('无权执行此操作：操作者不存在');
     }
 
-    const passwordValid = await bcrypt.compare(dto.password, operator.passwordHash);
+    const passwordValid = await bcrypt.compare(
+      dto.password,
+      operator.passwordHash,
+    );
     if (!passwordValid) {
       throw new ForbiddenException('密码验证失败');
     }
@@ -561,7 +568,9 @@ export class AdminService {
   // ===================== Tenant Documents =====================
 
   async updateDocuments(tenantId: string, dto: UpdateDocumentsDto) {
-    const tenant = await this.prisma.tenant.findUnique({ where: { id: tenantId } });
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+    });
     if (!tenant) throw new NotFoundException('租户不存在');
 
     const data: any = {};
@@ -608,32 +617,49 @@ export class AdminService {
       : [];
 
     // Diff
-    const newModules = currentModuleIds.filter((id) => !lastModules.includes(id));
-    const removedModules = lastModules.filter((id) => !currentModuleIds.includes(id));
+    const newModules = currentModuleIds.filter(
+      (id) => !lastModules.includes(id),
+    );
+    const removedModules = lastModules.filter(
+      (id) => !currentModuleIds.includes(id),
+    );
 
     // Calculate pricing
     const monthsSinceLast = lastDelivery
-      ? Math.max(0, (Date.now() - new Date(lastDelivery.createdAt).getTime()) / (30 * 24 * 3600 * 1000))
+      ? Math.max(
+          0,
+          (Date.now() - new Date(lastDelivery.createdAt).getTime()) /
+            (30 * 24 * 3600 * 1000),
+        )
       : Infinity;
 
-    const baseUpgradeFee = !lastDelivery ? 0
-      : monthsSinceLast <= 6 ? 300000
-      : monthsSinceLast <= 18 ? 500000
-      : 800000;
+    const baseUpgradeFee = !lastDelivery
+      ? 0
+      : monthsSinceLast <= 6
+        ? 300000
+        : monthsSinceLast <= 18
+          ? 500000
+          : 800000;
 
     // Get module prices
     const allModules = await this.prisma.module.findMany();
-    const priceMap = new Map(allModules.map((m) => [m.id, m.priceSourceCode || 0]));
+    const priceMap = new Map(
+      allModules.map((m) => [m.id, m.priceSourceCode || 0]),
+    );
 
     const newModuleFees = newModules.map((id) => ({
       moduleId: id,
       price: priceMap.get(id) || 0,
     }));
 
-    const subtotal = baseUpgradeFee + newModuleFees.reduce((s, m) => s + m.price, 0);
+    const subtotal =
+      baseUpgradeFee + newModuleFees.reduce((s, m) => s + m.price, 0);
 
     // Cap: not exceed 90% of full current price minus already paid
-    const currentFullPrice = currentModuleIds.reduce((s, id) => s + (priceMap.get(id) || 0), 0);
+    const currentFullPrice = currentModuleIds.reduce(
+      (s, id) => s + (priceMap.get(id) || 0),
+      0,
+    );
     const alreadyPaid = lastDelivery?.price || 0;
     const cap = Math.max(0, Math.round(currentFullPrice * 0.9) - alreadyPaid);
     const finalPrice = Math.min(subtotal, cap);
@@ -643,13 +669,15 @@ export class AdminService {
     return {
       isFirstDelivery,
       currentModules: currentModuleIds,
-      lastDelivery: lastDelivery ? {
-        id: lastDelivery.id,
-        version: lastDelivery.version,
-        moduleSnapshot: lastModules,
-        price: lastDelivery.price,
-        deliveredAt: lastDelivery.createdAt,
-      } : null,
+      lastDelivery: lastDelivery
+        ? {
+            id: lastDelivery.id,
+            version: lastDelivery.version,
+            moduleSnapshot: lastModules,
+            price: lastDelivery.price,
+            deliveredAt: lastDelivery.createdAt,
+          }
+        : null,
       newModules,
       removedModules,
       breakdown: {
@@ -677,12 +705,20 @@ export class AdminService {
       data: {
         tenantId,
         version,
-        modules: quote.currentModules.map((id) => ({ id, version: '1.0.0' })) as any,
+        modules: quote.currentModules.map((id) => ({
+          id,
+          version: '1.0.0',
+        })) as any,
         moduleSnapshot: quote.currentModules as any,
         watermarkId,
         price: quote.breakdown.finalPrice,
-        baseUpgradeFee: quote.isFirstDelivery ? null : quote.breakdown.baseUpgradeFee,
-        newModuleFee: quote.breakdown.newModuleFees.reduce((s, m) => s + m.price, 0),
+        baseUpgradeFee: quote.isFirstDelivery
+          ? null
+          : quote.breakdown.baseUpgradeFee,
+        newModuleFee: quote.breakdown.newModuleFees.reduce(
+          (s, m) => s + m.price,
+          0,
+        ),
         status: 'processing',
         deliveredAt: new Date(),
       },

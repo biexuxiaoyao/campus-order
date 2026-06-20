@@ -29,12 +29,19 @@ export class UserController {
 
   @Get('notify-prefs')
   async getNotifyPrefs(@Req() req: any) {
-    return this.userService.getNotificationPrefs(req.user?.userId, req.tenantId);
+    return this.userService.getNotificationPrefs(
+      req.user?.userId,
+      req.tenantId,
+    );
   }
 
   @Put('notify-prefs')
   async updateNotifyPrefs(@Req() req: any, @Body() dto: UpdateNotifyPrefsDto) {
-    return this.userService.updateNotificationPrefs(req.user?.userId, req.tenantId, dto);
+    return this.userService.updateNotificationPrefs(
+      req.user?.userId,
+      req.tenantId,
+      dto,
+    );
   }
 
   @Post('export-data')
