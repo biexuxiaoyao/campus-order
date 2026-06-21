@@ -14,6 +14,8 @@ import {
 const mockNotifyService = {
   notifyRefundApproved: jest.fn().mockResolvedValue(undefined),
   notifyOrderReady: jest.fn().mockResolvedValue(undefined),
+  notifyOrderCooking: jest.fn().mockResolvedValue(undefined),
+  notifyOrderCancelled: jest.fn().mockResolvedValue(undefined),
   sendSubscribeMessage: jest.fn().mockResolvedValue(undefined),
 };
 const mockPaymentService = {

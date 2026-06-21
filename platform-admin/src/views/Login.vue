@@ -50,20 +50,13 @@ async function handleLogin() {
   loading.value = true
   try {
     const res: any = await login(form.username, form.password)
-    localStorage.setItem('p_token', res?.data?.token || 'mock-token')
+    localStorage.setItem('p_token', res?.data?.token || '')
     localStorage.setItem('p_tenantId', res?.data?.user?.tenantId || '')
-    localStorage.setItem('p_user', JSON.stringify(res?.data?.user || { name: '超级管理员' }))
+    localStorage.setItem('p_user', JSON.stringify(res?.data?.user || {}))
     ElMessage.success('登录成功')
     router.replace('/dashboard')
   } catch (err: any) {
-    // Mock fallback: accept any non-empty credentials in dev
-    if (form.username && form.password) {
-      localStorage.setItem('p_token', 'mock-dev-token')
-      ElMessage.success('登录成功 (Mock)')
-      router.replace('/dashboard')
-    } else {
-      ElMessage.error(err?.response?.data?.message || '登录失败，请检查用户名和密码')
-    }
+    ElMessage.error(err?.response?.data?.message || '登录失败，请检查用户名和密码')
   } finally {
     loading.value = false
   }

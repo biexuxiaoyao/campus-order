@@ -141,4 +141,13 @@ export class OrderMerchantController {
       operatorId,
     );
   }
+
+  /** POST /api/merchant/orders/:id/urge-reply — Reply to user's urge */
+  @Post('orders/:id/urge-reply')
+  async replyUrge(
+    @Param('id') id: string,
+    @Body() body: { estimatedMinutes?: number },
+  ) {
+    return this.orderService.replyUrge(id, body.estimatedMinutes);
+  }
 }

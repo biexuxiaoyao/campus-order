@@ -736,24 +736,16 @@ export class AdminService {
       });
     }
 
-    // TODO Phase 2: Trigger packager worker via Redis queue
-    // await this.packagerQueue.add('deliver', { tenantId, deliveryId: delivery.id });
-
-    // For now, mark as completed (packager integration comes next)
-    await this.prisma.sourceDelivery.update({
-      where: { id: delivery.id },
-      data: {
-        status: 'completed',
-        downloadUrl: `/api/admin/source-delivery/${delivery.id}/download`,
-      },
-    });
+    // Packager will be triggered asynchronously by the controller.
+    // It copies sources, strips unpurchased modules, injects watermarks,
+    // generates deploy config, zips, and updates status → 'completed' + downloadUrl.
 
     return {
       deliveryId: delivery.id,
       version,
       price: quote.breakdown.finalPrice,
-      status: 'completed',
-      note: '交付记录已创建。Packager 集成将在 Phase 2 完成后自动生成交付包。',
+      status: 'processing',
+      note: '交付任务已创建，正在生成交付包。请稍后通过下载链接获取。',
     };
   }
 

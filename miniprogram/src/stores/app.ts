@@ -16,22 +16,43 @@ export interface BrandConfig {
   apiBaseUrl: string;
   contactPhone: string;
   notice: string;
+  // Subscribe message template IDs from WeChat
+  subscribeTemplates: string[];
+  // Miniprogram configuration from brand
+  rechargeOptions: number[];
+  timeSlots: string[];
+  exchangeRules: { id: string; label: string; points: number; type: string }[];
+}
+
+/** Collect WeChat subscribe template IDs from raw brand config */
+function collectTemplateIds(raw: Record<string, unknown>): string[] {
+  const ids: string[] = [];
+  for (const [key, value] of Object.entries(raw)) {
+    if (key.startsWith('notifyTemplate') && typeof value === 'string' && value) {
+      ids.push(value);
+    }
+  }
+  return ids;
 }
 
 export const useAppStore = defineStore('app', () => {
   const brandConfig = ref<BrandConfig>({
-    name: '校园点餐',
+    name: '',
     logo: '',
     themeColor: '#07C160',
     banners: [],
-    hours: '09:00-21:00',
+    hours: '',
     phone: '',
-    storeId: 'demo-store-001',
-    appName: '校园点餐',
+    storeId: '',
+    appName: '',
     primaryColor: '#07C160',
-    apiBaseUrl: 'http://localhost:3000',
+    apiBaseUrl: '',
     contactPhone: '',
     notice: '',
+    subscribeTemplates: [],
+    rechargeOptions: [50, 100, 200, 500],
+    timeSlots: ['尽快取餐'],
+    exchangeRules: [],
   });
 
   const isConfigLoaded = ref(false);
@@ -74,8 +95,12 @@ export const useAppStore = defineStore('app', () => {
         primaryColor: raw.themeColor || brandConfig.value.primaryColor,
         contactPhone: raw.phone || brandConfig.value.contactPhone,
         notice: raw.notice || brandConfig.value.notice,
-        storeId: brandConfig.value.storeId,
-        apiBaseUrl: brandConfig.value.apiBaseUrl,
+        storeId: raw.storeId || brandConfig.value.storeId,
+        apiBaseUrl: raw.apiBaseUrl || brandConfig.value.apiBaseUrl,
+        subscribeTemplates: collectTemplateIds(raw),
+        rechargeOptions: raw.rechargeOptions || brandConfig.value.rechargeOptions,
+        timeSlots: raw.timeSlots || brandConfig.value.timeSlots,
+        exchangeRules: raw.exchangeRules || brandConfig.value.exchangeRules,
       };
       brandConfig.value = mapped;
       isConfigLoaded.value = true;

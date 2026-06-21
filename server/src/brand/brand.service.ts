@@ -9,6 +9,13 @@ const DEFAULT_CONFIG = {
   banners: [],
   hours: '09:00-21:00',
   phone: '',
+  // Miniprogram configuration defaults (can be overridden per tenant)
+  rechargeOptions: [50, 100, 200, 500],
+  timeSlots: ['尽快取餐', '11:30', '11:45', '12:00', '12:15', '12:30', '12:45'],
+  exchangeRules: [
+    { id: 'coupon_10_2', label: '满10减2券', points: 100, type: 'coupon' },
+    { id: 'coupon_20_5', label: '满20减5券', points: 200, type: 'coupon' },
+  ],
 };
 
 @Injectable()
@@ -20,12 +27,24 @@ export class BrandService {
       where: { tenantId },
     });
 
+    // Resolve the first active store for this tenant (miniprogram needs storeId)
+    const firstStore = await this.prisma.store.findFirst({
+      where: { tenantId },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true },
+    });
+
+    const resolvedConfig: Record<string, unknown> = {
+      ...DEFAULT_CONFIG,
+      storeId: firstStore?.id || '',
+    };
+
     if (!record || !record.config) {
-      return DEFAULT_CONFIG;
+      return resolvedConfig;
     }
 
     const stored = record.config as Record<string, unknown>;
-    return { ...DEFAULT_CONFIG, ...stored };
+    return { ...resolvedConfig, ...stored };
   }
 
   async updateConfig(tenantId: string, dto: UpdateBrandConfigDto) {

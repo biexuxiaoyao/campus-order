@@ -2,6 +2,8 @@ import {
   Injectable,
   NotFoundException,
   ConflictException,
+  BadRequestException,
+  Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateDishDto } from './dto/create-dish.dto';
@@ -332,5 +334,216 @@ export class DishService {
       select: { id: true, name: true, storeId: true },
       orderBy: { sortOrder: 'asc' },
     });
+  }
+
+  // ==================== CSV 导入导出 ====================
+
+  private readonly logger = new Logger(DishService.name);
+
+  /** CSV 头部字段 */
+  private readonly CSV_HEADERS = ['name', 'categoryId', 'unit', 'price(分)', 'status'];
+
+  /**
+   * 批量导入菜品 (CSV 文本)
+   * @returns { created, errors[] }
+   */
+  async importCsv(
+    storeId: string,
+    csvContent: string,
+  ): Promise<{ created: any[]; errors: { row: number; error: string }[] }> {
+    const rows = this.parseCsv(csvContent);
+
+    if (rows.length === 0) {
+      throw new BadRequestException('CSV 文件为空或格式不正确');
+    }
+
+    // Pre-resolve all categories referenced in the CSV to avoid N+1 queries
+    const referencedCategoryIds = [
+      ...new Set(
+        rows.map((r) => r.categoryId?.trim()).filter(Boolean),
+      ),
+    ] as string[];
+    const existingCategories = await this.prisma.category.findMany({
+      where: { id: { in: referencedCategoryIds }, storeId },
+    });
+    const categoryMap = new Map(existingCategories.map((c) => [c.id, c]));
+
+    // Resolve default category once
+    let defaultCategory =
+      await this.prisma.category.findFirst({ where: { storeId } });
+    if (!defaultCategory) {
+      defaultCategory = await this.prisma.category.create({
+        data: { storeId, name: '默认分类' },
+      });
+    }
+
+    const created: any[] = [];
+    const errors: { row: number; error: string }[] = [];
+
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      // Normalize header: accept both 'price' and 'price(分)'
+      if (row['price(分)'] !== undefined && row['price'] === undefined) {
+        row['price'] = row['price(分)'];
+      }
+      try {
+        // Validate required fields
+        if (!row.name || !row.name.trim()) {
+          errors.push({ row: i + 1, error: '菜品名称不能为空' });
+          continue;
+        }
+
+        const priceRaw = (row.price || '').trim();
+        if (!priceRaw) {
+          errors.push({ row: i + 1, error: '价格不能为空（须为正整数，单位：分）' });
+          continue;
+        }
+        const priceNum = Number(priceRaw);
+        if (isNaN(priceNum) || priceNum <= 0 || !Number.isInteger(priceNum)) {
+          errors.push({
+            row: i + 1,
+            error: `价格无效: ${row.price}（须为正整数，单位：分）`,
+          });
+          continue;
+        }
+        const price = Math.round(priceNum);
+
+        // Resolve category from pre-fetched map or use default
+        const categoryIdInput = row.categoryId?.trim();
+        let categoryId: string;
+        if (categoryIdInput && categoryMap.has(categoryIdInput)) {
+          categoryId = categoryIdInput;
+        } else if (categoryIdInput && !categoryMap.has(categoryIdInput)) {
+          errors.push({
+            row: i + 1,
+            error: `分类 ${categoryIdInput} 不存在`,
+          });
+          continue;
+        } else {
+          categoryId = defaultCategory.id;
+        }
+
+        // Create dish + SKU atomically
+        const dish = await this.prisma.$transaction(async (tx) => {
+          const d = await tx.dish.create({
+            data: {
+              storeId,
+              name: row.name.trim(),
+              categoryId,
+              unit: row.unit || '份',
+              status: row.status === 'published' ? 'published' : 'draft',
+              imageUrl: row.imageUrl || undefined,
+            },
+            include: {
+              skus: true,
+              images: true,
+              category: { select: { id: true, name: true } },
+            },
+          });
+
+          await tx.sku.create({
+            data: {
+              dishId: d.id,
+              specs: {},
+              price,
+              availableStock: 999,
+            },
+          });
+
+          return d;
+        });
+
+        created.push(dish);
+      } catch (err: any) {
+        errors.push({ row: i + 1, error: err.message });
+      }
+    }
+
+    this.logger.log(
+      `[CSV Import] store=${storeId} created=${created.length} errors=${errors.length}`,
+    );
+
+    return { created, errors };
+  }
+
+  /**
+   * 导出菜品为 CSV 文本
+   */
+  async exportCsv(storeId: string): Promise<string> {
+    const dishes = await this.prisma.dish.findMany({
+      where: { storeId },
+      include: {
+        skus: { take: 1 },
+        category: { select: { id: true, name: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const header = this.CSV_HEADERS.join(',');
+    const rows = dishes.map((d) => {
+      const firstSku = d.skus[0];
+      return [
+        this.csvEscape(d.name),
+        d.categoryId || '',
+        d.unit || '份',
+        firstSku?.price ?? '',
+        d.status,
+      ].join(',');
+    });
+
+    return [header, ...rows].join('\n');
+  }
+
+  /** 简易 CSV 解析 (支持引号包裹) */
+  private parseCsv(content: string): Record<string, string>[] {
+    const lines = content
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0);
+
+    if (lines.length < 2) return [];
+
+    const headers = this.parseCsvLine(lines[0]);
+    const result: Record<string, string>[] = [];
+
+    for (let i = 1; i < lines.length; i++) {
+      const values = this.parseCsvLine(lines[i]);
+      const row: Record<string, string> = {};
+      for (let j = 0; j < headers.length; j++) {
+        row[headers[j]] = values[j] || '';
+      }
+      result.push(row);
+    }
+
+    return result;
+  }
+
+  /** 解析一行 CSV，支持双引号包裹 */
+  private parseCsvLine(line: string): string[] {
+    const result: string[] = [];
+    let current = '';
+    let inQuotes = false;
+
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') {
+        inQuotes = !inQuotes;
+      } else if (ch === ',' && !inQuotes) {
+        result.push(current.trim());
+        current = '';
+      } else {
+        current += ch;
+      }
+    }
+    result.push(current.trim());
+    return result;
+  }
+
+  /** CSV 字段转义 */
+  private csvEscape(value: string): string {
+    if (value.includes(',') || value.includes('"') || value.includes('\n')) {
+      return `"${value.replace(/"/g, '""')}"`;
+    }
+    return value;
   }
 }

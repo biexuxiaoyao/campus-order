@@ -1,7 +1,10 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { ref, computed, onMounted } from 'vue';
+import { useAppStore } from '@/stores/app';
 import { getBalance, recharge, getTransactions } from '@/api/prepaid';
 import type { PrepaidBalance, PrepaidTransaction } from '@/api/prepaid';
+
+const appStore = useAppStore();
 
 const balance = ref<PrepaidBalance>({
   personalBalance: 0,
@@ -16,7 +19,7 @@ const rechargeAmount = ref('');
 const rechargeType = ref<'personal' | 'company'>('personal');
 const recharging = ref(false);
 
-const rechargeOptions = [50, 100, 200, 500];
+const rechargeOptions = computed(() => appStore.brandConfig?.rechargeOptions || [50, 100, 200, 500]);
 
 function formatPrice(price: number): string {
   return (price / 100).toFixed(2);

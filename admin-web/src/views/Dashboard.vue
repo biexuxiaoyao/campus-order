@@ -76,14 +76,15 @@
 
 <script setup lang="ts">
 import { reactive, onMounted } from 'vue'
-import { getOrders } from '@/api/orders'
-import { getDishes } from '@/api/dishes'
+import { getOrders, getDashboard } from '@/api/orders'
 import { useAppStore } from '@/stores/app'
 
 const appStore = useAppStore()
 const stats = reactive({
   todayRevenue: 0,
   todayOrders: 0,
+  avgOrderValue: 0,
+  todayRefund: 0,
   pendingOrders: 0,
   pendingRefunds: 0,
   weekRevenue: 0,
@@ -123,25 +124,26 @@ function getPastWeekDates(): { label: string; dateStr: string }[] {
 
 async function loadData() {
   try {
-    const today = new Date().toISOString().slice(0, 10)
-    const storeId = appStore.currentStoreId || undefined
+    const storeId = appStore.currentStoreId || ''
 
-    // 1. Today's data
-    const res1 = await getOrders({ startDate: today, endDate: today, pageSize: 999, storeId })
-    const todayOrders = (res1 as any)?.list || (res1 as any)?.items || []
-    stats.todayOrders = (res1 as any)?.total || todayOrders.length
-    stats.todayRevenue = todayOrders.reduce(
-      (sum: number, o: any) => sum + (o.totalAmount || 0),
-      0,
-    )
-    stats.pendingOrders = todayOrders.filter(
-      (o: any) => o.status === 'pending' || o.status === 'confirmed',
-    ).length
-    stats.pendingRefunds = todayOrders.filter(
-      (o: any) => o.status === 'refunding',
-    ).length
+    // All dashboard data from server (today + week + yesterday + topDishes)
+    const dash: any = await getDashboard(storeId)
+    const data = dash?.data || dash || {}
+    stats.todayRevenue = data.todayRevenue || 0
+    stats.todayOrders = data.todayOrders || 0
+    stats.avgOrderValue = data.avgOrderValue || 0
+    stats.todayRefund = data.todayRefund || 0
+    stats.pendingOrders = data.pendingOrders || 0
+    stats.weekRevenue = data.weekRevenue || 0
+    stats.weekOrders = data.weekOrders || 0
+    stats.revenueChange = data.revenueChange || 0
+    stats.orderChange = data.orderChange || 0
+    stats.topDishes = (data.topDishes || []).map((d: any) => ({
+      name: d.name,
+      count: d.quantity || 0,
+    }))
 
-    // 2. Real 7-day chart data — query each day
+    // 7-day chart still uses per-day queries (or can be extended later)
     const weekDays = getPastWeekDates()
     const dailyAmounts: { date: string; amount: number }[] = []
     for (const day of weekDays) {
@@ -152,38 +154,7 @@ async function loadData() {
     }
     chartData.dailySales = dailyAmounts
     chartData.maxAmount = Math.max(...dailyAmounts.map((d) => d.amount), 1)
-
-    // 3. Weekly stats
-    const weekStart = weekDays[0].dateStr
-    const weekRes: any = await getOrders({ startDate: weekStart, endDate: today, pageSize: 999, storeId })
-    const weekOrders = weekRes?.list || weekRes?.items || []
-    stats.weekRevenue = weekOrders.reduce((sum: number, o: any) => sum + (o.totalAmount || 0), 0)
-    stats.weekOrders = weekRes?.total || weekOrders.length
-
-    // 4. Yesterday comparison
-    const yesterday = new Date()
-    yesterday.setDate(yesterday.getDate() - 1)
-    const yestStr = yesterday.toISOString().slice(0, 10)
-    const yestRes: any = await getOrders({ startDate: yestStr, endDate: yestStr, pageSize: 999, storeId })
-    const yesterdayOrders = yestRes?.list || yestRes?.items || []
-    const yesterdayTotal = yesterdayOrders.reduce((sum: number, o: any) => sum + (o.totalAmount || 0), 0)
-    const yesterdayCount = yestRes?.total || yesterdayOrders.length
-    stats.revenueChange = yesterdayTotal > 0
-      ? Math.round(((stats.todayRevenue - yesterdayTotal) / yesterdayTotal) * 1000) / 10
-      : 0
-    stats.orderChange = yesterdayCount > 0
-      ? Math.round(((stats.todayOrders - yesterdayCount) / yesterdayCount) * 1000) / 10
-      : 0
-
-    // 5. Top dishes
-    const res2 = await getDishes({ pageSize: 5, storeId })
-    const dishes = (res2 as any)?.list || (res2 as any)?.items || []
-    stats.topDishes = dishes.map((d: any) => ({
-      name: d.name,
-      count: d.soldCount || d.orderCount || 0,
-    }))
   } catch {
-    // Fallback: API unreachable, show empty state
     chartData.dailySales = []
     chartData.maxAmount = 0
     stats.topDishes = []

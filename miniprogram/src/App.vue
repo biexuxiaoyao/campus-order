@@ -6,19 +6,19 @@ import { useAppStore } from '@/stores/app';
 const authStore = useAuthStore();
 const appStore = useAppStore();
 
-// 默认 AppID（开发环境），生产环境从微信账号信息获取
-const DEFAULT_APP_ID = 'wx8ebfaf4a045bf7c3';
-
 onLaunch(async () => {
   console.log('[App] onLaunch');
 
   // 确保 appId 已存储（品牌配置请求需要 x-app-id header）
   if (!uni.getStorageSync('appId')) {
-    // 尝试从微信获取小程序 AppID
+    // 从微信获取小程序 AppID（getAccountInfoSync 在所有微信环境中可用）
     const accountInfo = uni.getAccountInfoSync?.();
-    const appId = accountInfo?.miniProgram?.appId || DEFAULT_APP_ID;
+    const appId = accountInfo?.miniProgram?.appId || '';
+    if (!appId) {
+      console.error('[App] 无法获取 AppID，请确保在微信小程序环境中运行');
+    }
     uni.setStorageSync('appId', appId);
-    console.log('[App] AppID:', appId);
+    console.log('[App] AppID:', appId || '(未获取到)');
   }
 
   // 加载品牌配置

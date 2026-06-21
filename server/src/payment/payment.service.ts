@@ -10,6 +10,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { PrepaidService } from '../prepaid/prepaid.service';
 import { NotifyService } from '../notify/notify.service';
 import { WechatPayConfig } from './wechat-pay.config';
+import { WechatPayClient } from './wechat-pay.client';
 import {
   WechatPrepayRequest,
   WechatPrepayResponse,
@@ -31,6 +32,7 @@ export class PaymentService {
     private prisma: PrismaService,
     private http: HttpService,
     private wechatConfig: WechatPayConfig,
+    private wechatPay: WechatPayClient,
     private config: ConfigService,
     private notify: NotifyService,
     private prepaidService: PrepaidService,

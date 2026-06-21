@@ -82,6 +82,7 @@ import {
   Ticket,
   List,
   Shop,
+  Money,
 } from '@element-plus/icons-vue'
 
 const route = useRoute()
@@ -115,6 +116,7 @@ const iconMap: Record<string, any> = {
   '/coupons': markRaw(Ticket),
   '/audit': markRaw(List),
   '/brand': markRaw(Shop),
+  '/reconciliation': markRaw(Money),
 }
 
 const userRole = computed(() => authStore.user?.role || 'staff')

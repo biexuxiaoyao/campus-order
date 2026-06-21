@@ -1,7 +1,27 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { PrepaidService } from './prepaid.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { WechatPayConfig } from '../payment/wechat-pay.config';
+import { WechatPayClient } from '../payment/wechat-pay.client';
 import { BadRequestException } from '@nestjs/common';
+
+// Mock WechatPayConfig — not configured (returns mock params)
+const mockWechatPayConfig = {
+  isConfigured: false,
+  mchId: '',
+  apiV3Key: '',
+  serialNo: '',
+  privateKey: null,
+  platformCert: null,
+};
+
+const mockWechatPayClient = {
+  getAppId: jest.fn().mockReturnValue(''),
+  generateNonceStr: jest.fn().mockReturnValue('mocknoncestr12345678901234567890'),
+  signMessage: jest.fn().mockReturnValue('mock-signature'),
+  generateWechatSign: jest.fn().mockReturnValue('mock-pay-sign'),
+  callWechatApi: jest.fn().mockResolvedValue({ prepay_id: 'mock_prepay_id' }),
+};
 
 describe('PrepaidService', () => {
   let service: PrepaidService;
@@ -12,7 +32,12 @@ describe('PrepaidService', () => {
 
   beforeAll(async () => {
     const module: TestingModule = await Test.createTestingModule({
-      providers: [PrepaidService, PrismaService],
+      providers: [
+        PrepaidService,
+        PrismaService,
+        { provide: WechatPayConfig, useValue: mockWechatPayConfig },
+        { provide: WechatPayClient, useValue: mockWechatPayClient },
+      ],
     }).compile();
     service = module.get<PrepaidService>(PrepaidService);
     prisma = module.get<PrismaService>(PrismaService);

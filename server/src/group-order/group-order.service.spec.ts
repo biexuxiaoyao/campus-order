@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { GroupOrderService } from './group-order.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotifyService } from '../notify/notify.service';
+import { PaymentService } from '../payment/payment.service';
 import {
   ConflictException,
   NotFoundException,
@@ -11,6 +12,9 @@ import {
 
 const mockNotifyService = {
   notifyGroupResult: jest.fn().mockResolvedValue(undefined),
+};
+const mockPaymentService = {
+  refund: jest.fn().mockResolvedValue({ id: 'mock-refund', status: 'completed' }),
 };
 
 describe('GroupOrderService', () => {
@@ -29,6 +33,7 @@ describe('GroupOrderService', () => {
         GroupOrderService,
         PrismaService,
         { provide: NotifyService, useValue: mockNotifyService },
+        { provide: PaymentService, useValue: mockPaymentService },
       ],
     }).compile();
 
@@ -245,7 +250,45 @@ describe('GroupOrderService', () => {
   });
 
   describe('closePool', () => {
-    it('should mark success when condition A met', async () => {
+    // Helper: bypass 30s buffer by setting closingAt to past
+    async function bypassBuffer(poolId: string) {
+      await prisma.groupOrder.update({
+        where: { id: poolId },
+        data: { closingAt: new Date(Date.now() - 60_000) },
+      });
+    }
+
+    it('should return closing phase on first call (buffer start)', async () => {
+      const pool = await service.createPool(USER_A, TENANT_ID, {
+        storeId: STORE_ID,
+        minAmount: 3000,
+        condition: 'A',
+      });
+      await service.joinPool(pool.id, USER_B, {
+        items: [{ skuId: SKU_1, quantity: 3, price: 1500 }],
+      });
+      const result = await service.closePool(pool.id, USER_A);
+      expect(result.phase).toBe('closing');
+      expect(result.closesAt).toBeDefined();
+    });
+
+    it('should reject join during closing buffer', async () => {
+      const pool = await service.createPool(USER_A, TENANT_ID, {
+        storeId: STORE_ID,
+        minAmount: 3000,
+        condition: 'A',
+      });
+      // Start buffer
+      await service.closePool(pool.id, USER_A);
+      // Join should be rejected
+      await expect(
+        service.joinPool(pool.id, USER_B, {
+          items: [{ skuId: SKU_1, quantity: 1 }],
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should mark success when condition A met (after buffer)', async () => {
       const pool = await service.createPool(USER_A, TENANT_ID, {
         storeId: STORE_ID,
         minAmount: 3000,
@@ -254,6 +297,7 @@ describe('GroupOrderService', () => {
       await service.joinPool(pool.id, USER_B, {
         items: [{ skuId: SKU_1, quantity: 3, price: 1500 }],
       }); // 4500 >= 3000
+      await bypassBuffer(pool.id);
       const result = await service.closePool(pool.id, USER_A);
       expect(result.status).toBe('success');
     });
@@ -272,11 +316,12 @@ describe('GroupOrderService', () => {
       await service.joinPool(pool.id, USER_A, {
         items: [{ skuId: SKU_1, quantity: 1 }],
       });
+      await bypassBuffer(pool.id);
       await service.closePool(pool.id, USER_A);
 
       const orders = await prisma.order.findMany({
         where: { type: 'group_pool' },
-        include: { items: true, timeline: true },
+        include: { items: true, timeline: true, payments: true },
       });
       expect(orders.length).toBe(2); // One per participant
       for (const order of orders) {
@@ -284,6 +329,9 @@ describe('GroupOrderService', () => {
         expect(order.type).toBe('group_pool');
         expect(order.timeline.length).toBeGreaterThanOrEqual(1);
         expect(order.timeline[0].status).toBe('pending');
+        expect(order.payments.length).toBe(1);
+        expect(order.payments[0].status).toBe('pending');
+        expect(order.payments[0].channel).toBe('wechat');
       }
 
       // Stock deducted
@@ -313,14 +361,16 @@ describe('GroupOrderService', () => {
       await service.joinPool(pool.id, USER_B, {
         items: [{ skuId: SKU_1, quantity: 1, price: 100 }],
       });
+      await bypassBuffer(pool.id);
       const result = await service.closePool(pool.id, USER_A);
       expect(result.status).toBe('cancelled');
 
-      // No orders created
+      // Order (created during join) should be cancelled
       const orders = await prisma.order.findMany({
         where: { type: 'group_pool' },
       });
-      expect(orders.length).toBe(0);
+      expect(orders.length).toBe(1);
+      expect(orders[0].status).toBe('cancelled');
 
       // No stock deducted
       const sku1After = await prisma.sku.findUnique({
@@ -344,6 +394,7 @@ describe('GroupOrderService', () => {
         data: { availableStock: 0, version: { increment: 1 } },
       });
 
+      await bypassBuffer(pool.id);
       await expect(service.closePool(pool.id, USER_A)).rejects.toThrow(
         ConflictException,
       );
@@ -354,11 +405,11 @@ describe('GroupOrderService', () => {
       });
       expect(go!.status).toBe('pooling');
 
-      // No orders created
+      // Order from joinPool remains pending (transaction rolled back)
       const orders = await prisma.order.findMany({
         where: { type: 'group_pool' },
       });
-      expect(orders.length).toBe(0);
+      expect(orders.length).toBe(1);
     });
 
     it('should reject non-leader close', async () => {
@@ -388,14 +439,17 @@ describe('GroupOrderService', () => {
       expect(order.status).toBe('success');
       expect(order.items.length).toBe(2);
 
-      // Verify Order was created
+      // Verify Order was created with PaymentRecord
       const dbOrders = await prisma.order.findMany({
         where: { type: 'group_represent' },
-        include: { items: true, timeline: true },
+        include: { items: true, timeline: true, payments: true },
       });
       expect(dbOrders.length).toBe(1);
       expect(dbOrders[0].status).toBe('pending');
       expect(dbOrders[0].timeline[0].status).toBe('pending');
+      expect(dbOrders[0].payments.length).toBe(1);
+      expect(dbOrders[0].payments[0].status).toBe('pending');
+      expect(dbOrders[0].payments[0].channel).toBe('wechat');
 
       // Stock deducted
       const sku1After = await prisma.sku.findUnique({

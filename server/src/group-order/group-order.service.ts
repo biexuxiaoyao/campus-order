@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotifyService } from '../notify/notify.service';
+import { PaymentService } from '../payment/payment.service';
 import { CreateGroupOrderDto } from './dto/create-group-order.dto';
 import { JoinGroupOrderDto } from './dto/join-group-order.dto';
 import { RepresentOrderDto } from './dto/represent-order.dto';
@@ -54,6 +55,7 @@ export class GroupOrderService {
   constructor(
     private prisma: PrismaService,
     private notify: NotifyService,
+    private payment: PaymentService,
   ) {}
 
   /** Create a pooling group order */
@@ -161,6 +163,10 @@ export class GroupOrderService {
       throw new BadRequestException('该团单已超过截止时间');
     }
 
+    if (groupOrder.closingAt) {
+      throw new BadRequestException('该团单正在截单中，无法参与');
+    }
+
     // Validate SKUs exist
     const skuIds = dto.items.map((item) => item.skuId);
     const skus = await this.prisma.sku.findMany({
@@ -227,10 +233,101 @@ export class GroupOrderService {
       results.push(result);
     }
 
+    // Create or update pending Order + PaymentRecord so user can pay before close
+    const userItems = await this.prisma.groupOrderItem.findMany({
+      where: { groupOrderId, userId },
+    });
+
+    const existingOrderId = userItems.find((i) => i.orderId)?.orderId;
+
+    if (existingOrderId) {
+      // Update existing order to reflect current items
+      await this.prisma.$transaction(async (tx) => {
+        await tx.orderItem.deleteMany({ where: { orderId: existingOrderId } });
+        const totalAmount = userItems.reduce(
+          (sum, i) => sum + i.price * i.quantity,
+          0,
+        );
+        await tx.order.update({
+          where: { id: existingOrderId },
+          data: {
+            totalAmount,
+            items: {
+              create: userItems.map((item) => ({
+                skuId: item.skuId,
+                dishName: item.dishName,
+                specName: item.specName,
+                price: item.price,
+                quantity: item.quantity,
+              })),
+            },
+          },
+        });
+        // Update PaymentRecord amount
+        await tx.paymentRecord.updateMany({
+          where: { orderId: existingOrderId, status: 'pending' },
+          data: { amount: totalAmount },
+        });
+        // Back-link any new items
+        for (const item of userItems) {
+          if (!item.orderId) {
+            await tx.groupOrderItem.update({
+              where: { id: item.id },
+              data: { orderId: existingOrderId },
+            });
+          }
+        }
+      });
+    } else {
+      // Create new pending Order with PaymentRecord
+      const orderNo = generateOrderNo();
+      const totalAmount = userItems.reduce(
+        (sum, i) => sum + i.price * i.quantity,
+        0,
+      );
+      const order = await this.prisma.order.create({
+        data: {
+          orderNo,
+          tenantId: groupOrder.tenantId,
+          userId,
+          storeId: groupOrder.storeId,
+          type: 'group_pool',
+          status: 'pending',
+          totalAmount,
+          items: {
+            create: userItems.map((item) => ({
+              skuId: item.skuId,
+              dishName: item.dishName,
+              specName: item.specName,
+              price: item.price,
+              quantity: item.quantity,
+            })),
+          },
+          payments: {
+            create: {
+              amount: totalAmount,
+              channel: 'wechat',
+              status: 'pending',
+            },
+          },
+          timeline: {
+            create: { status: 'pending' },
+          },
+        },
+      });
+      // Back-link all items to the new Order
+      for (const item of userItems) {
+        await this.prisma.groupOrderItem.update({
+          where: { id: item.id },
+          data: { orderId: order.id },
+        });
+      }
+    }
+
     return results;
   }
 
-  /** Leader closes the pool — check condition and finalize status */
+  /** Leader closes the pool — starts 30s buffer, then checks condition and finalizes */
   async closePool(groupOrderId: string, leaderId: string) {
     const groupOrder = await this.prisma.groupOrder.findUnique({
       where: { id: groupOrderId },
@@ -249,6 +346,42 @@ export class GroupOrderService {
       throw new BadRequestException('该团单已关闭');
     }
 
+    // 30s buffer: first close call sets closingAt, subsequent calls execute after buffer
+    const now = new Date();
+    const BUFFER_SECONDS = 30;
+
+    if (!groupOrder.closingAt) {
+      // First close call — start the buffer
+      const closingAt = new Date(now.getTime() + BUFFER_SECONDS * 1000);
+      await this.prisma.groupOrder.update({
+        where: { id: groupOrderId },
+        data: { closingAt },
+      });
+
+      this.logger.log(
+        `[closePool] 截单缓冲已启动 group=${groupOrderId}, closingAt=${closingAt.toISOString()}`,
+      );
+
+      return {
+        id: groupOrderId,
+        status: 'pooling',
+        phase: 'closing',
+        closesAt: closingAt,
+        message: `截单缓冲已启动，${BUFFER_SECONDS}秒后正式截单`,
+      };
+    }
+
+    if (groupOrder.closingAt > now) {
+      // Buffer still active — reject premature close
+      const remaining = Math.ceil(
+        (groupOrder.closingAt.getTime() - now.getTime()) / 1000,
+      );
+      throw new BadRequestException(
+        `截单缓冲进行中，请 ${remaining} 秒后重试`,
+      );
+    }
+
+    // Buffer expired — execute actual close
     let newStatus: string;
 
     if (groupOrder.condition === 'A' && groupOrder.minAmount != null) {
@@ -263,12 +396,23 @@ export class GroupOrderService {
       } else {
         newStatus = 'cancelled';
       }
+    } else if (groupOrder.condition === 'B' && groupOrder.minAmount != null) {
+      // Condition B: distinct participant count >= minAmount (threshold)
+      const participantCount = new Set(
+        groupOrder.items.map((i) => i.userId),
+      ).size;
+
+      if (participantCount >= groupOrder.minAmount) {
+        newStatus = 'success';
+      } else {
+        newStatus = 'cancelled';
+      }
     } else {
-      // No condition check needed (condition B not yet implemented, or no minAmount set)
+      // No threshold set — always succeed
       newStatus = 'success';
     }
 
-    // === Success path: deduct stock + create Orders + back-link ===
+    // === Success path: deduct stock + finalize ===
     if (newStatus === 'success') {
       // Fetch full SKU data for stock deduction (with version for optimistic lock)
       const allSkuIds = [...new Set(groupOrder.items.map((i) => i.skuId))];
@@ -276,15 +420,6 @@ export class GroupOrderService {
         where: { id: { in: allSkuIds } },
       });
       const skuMap = new Map(skus.map((s) => [s.id, s]));
-
-      // Group items by userId — one Order per participant
-      const itemsByUser = new Map<string, typeof groupOrder.items>();
-      for (const item of groupOrder.items) {
-        if (!itemsByUser.has(item.userId)) {
-          itemsByUser.set(item.userId, []);
-        }
-        itemsByUser.get(item.userId)!.push(item);
-      }
 
       // All-or-nothing transaction
       await this.prisma.$transaction(async (tx) => {
@@ -315,58 +450,90 @@ export class GroupOrderService {
           }
         }
 
-        // Step 2: Create one Order per userId
-        for (const [userId, userItems] of itemsByUser) {
-          const orderNo = generateOrderNo();
-          const orderTotal = userItems.reduce(
-            (sum, item) => sum + item.price * item.quantity,
-            0,
-          );
+        // Step 2: Advance paid orders to confirmed so kitchen can see them
+        const linkedOrderIds = [
+          ...new Set(
+            groupOrder.items.map((i) => i.orderId).filter(Boolean),
+          ),
+        ] as string[];
 
-          const order = await tx.order.create({
-            data: {
-              orderNo,
-              tenantId: groupOrder.tenantId,
-              userId,
-              storeId: groupOrder.storeId,
-              type: 'group_pool',
-              status: 'pending',
-              totalAmount: orderTotal,
-              items: {
-                create: userItems.map((item) => ({
-                  skuId: item.skuId,
-                  dishName: item.dishName,
-                  specName: item.specName,
-                  price: item.price,
-                  quantity: item.quantity,
-                })),
-              },
-              timeline: {
-                create: { status: 'pending' },
-              },
-            },
+        if (linkedOrderIds.length > 0) {
+          // Advance paid orders to confirmed so kitchen can see them
+          // updateMany's `status: 'paid'` guard is safe within the transaction
+          await tx.order.updateMany({
+            where: { id: { in: linkedOrderIds }, status: 'paid' },
+            data: { status: 'confirmed' },
           });
 
-          // Step 3: Back-link GroupOrderItem → Order
-          for (const item of userItems) {
-            await tx.groupOrderItem.update({
-              where: { id: item.id },
-              data: { orderId: order.id },
+          // Find which orders were actually updated for timeline entries
+          const confirmedOrders = await tx.order.findMany({
+            where: { id: { in: linkedOrderIds }, status: 'confirmed' },
+            select: { id: true },
+          });
+
+          if (confirmedOrders.length > 0) {
+            await tx.orderTimeline.createMany({
+              data: confirmedOrders.map((o) => ({
+                orderId: o.id,
+                status: 'confirmed',
+              })),
             });
           }
         }
 
-        // Step 4: Update GroupOrder status
+        // Step 3: Update GroupOrder status
         await tx.groupOrder.update({
           where: { id: groupOrderId },
           data: { status: 'success' },
         });
       });
     } else {
-      // Cancelled path: just update status (no stock was deducted)
-      await this.prisma.groupOrder.update({
-        where: { id: groupOrderId },
-        data: { status: 'cancelled' },
+      // Cancelled path: atomically cancel pending orders + their PaymentRecords + GroupOrder
+      const linkedOrderIds = [
+        ...new Set(
+          groupOrder.items.map((i) => i.orderId).filter(Boolean),
+        ),
+      ] as string[];
+
+      await this.prisma.$transaction(async (tx) => {
+        if (linkedOrderIds.length > 0) {
+          // Find which orders are actually pending (will be cancelled)
+          const pendingOrders = await tx.order.findMany({
+            where: { id: { in: linkedOrderIds }, status: 'pending' },
+            select: { id: true },
+          });
+          const pendingOrderIds = pendingOrders.map((o) => o.id);
+
+          if (pendingOrderIds.length > 0) {
+            await tx.order.updateMany({
+              where: { id: { in: pendingOrderIds } },
+              data: { status: 'cancelled' },
+            });
+            await tx.paymentRecord.updateMany({
+              where: { orderId: { in: pendingOrderIds }, status: 'pending' },
+              data: { status: 'failed' },
+            });
+            await tx.orderTimeline.createMany({
+              data: pendingOrderIds.map((orderId) => ({
+                orderId,
+                status: 'cancelled',
+              })),
+            });
+          }
+
+          // Initiate refunds for already-paid orders in the cancelled group
+          await this.refundPaidOrdersOnCancel(
+            tx,
+            linkedOrderIds,
+            '团单未达成条件，自动取消',
+          );
+        }
+
+        // Update GroupOrder status
+        await tx.groupOrder.update({
+          where: { id: groupOrderId },
+          data: { status: 'cancelled' },
+        });
       });
     }
 
@@ -527,6 +694,13 @@ export class GroupOrderService {
               };
             }),
           },
+          payments: {
+            create: {
+              amount: totalAmount,
+              channel: 'wechat',
+              status: 'pending',
+            },
+          },
           timeline: {
             create: { status: 'pending' },
           },
@@ -551,6 +725,7 @@ export class GroupOrderService {
   async cancelGroup(groupOrderId: string, leaderId: string) {
     const groupOrder = await this.prisma.groupOrder.findUnique({
       where: { id: groupOrderId },
+      include: { items: true },
     });
 
     if (!groupOrder) {
@@ -565,9 +740,52 @@ export class GroupOrderService {
       throw new BadRequestException('只能取消拼团中的团单');
     }
 
-    const updated = await this.prisma.groupOrder.update({
+    // Atomically cancel linked Orders + PaymentRecords + GroupOrder
+    const linkedOrderIds = [
+      ...new Set(groupOrder.items.map((i) => i.orderId).filter(Boolean)),
+    ] as string[];
+
+    await this.prisma.$transaction(async (tx) => {
+      if (linkedOrderIds.length > 0) {
+        // Find which orders are actually pending (will be cancelled)
+        const pendingOrders = await tx.order.findMany({
+          where: { id: { in: linkedOrderIds }, status: 'pending' },
+          select: { id: true },
+        });
+        const pendingOrderIds = pendingOrders.map((o) => o.id);
+
+        if (pendingOrderIds.length > 0) {
+          await tx.order.updateMany({
+            where: { id: { in: pendingOrderIds } },
+            data: { status: 'cancelled' },
+          });
+          await tx.paymentRecord.updateMany({
+            where: { orderId: { in: pendingOrderIds }, status: 'pending' },
+            data: { status: 'failed' },
+          });
+          await tx.orderTimeline.createMany({
+            data: pendingOrderIds.map((orderId) => ({
+              orderId,
+              status: 'cancelled',
+            })),
+          });
+        }
+
+        // Initiate refunds for already-paid orders
+        await this.refundPaidOrdersOnCancel(
+          tx,
+          linkedOrderIds,
+          '团长手动取消团单',
+        );
+      }
+      await tx.groupOrder.update({
+        where: { id: groupOrderId },
+        data: { status: 'cancelled' },
+      });
+    });
+
+    const updated = await this.prisma.groupOrder.findUnique({
       where: { id: groupOrderId },
-      data: { status: 'cancelled' },
       include: {
         leader: { select: { id: true, nickname: true, avatar: true } },
         items: {
@@ -579,5 +797,102 @@ export class GroupOrderService {
     });
 
     return updated;
+  }
+
+  /**
+   * Cron-driven: auto-close pools past deadline or with expired closingAt buffer.
+   * Returns summary of pools processed.
+   */
+  async closeExpiredPools(): Promise<{
+    bufferStarted: number;
+    closed: number;
+    errors: number;
+  }> {
+    const now = new Date();
+
+    // Find pools that need processing:
+    // (a) deadline passed, no closingAt set yet → need buffer start
+    // (b) closingAt passed → need actual close
+    const expiredPools = await this.prisma.groupOrder.findMany({
+      where: {
+        status: 'pooling',
+        OR: [
+          { deadline: { not: null, lt: now } },
+          { closingAt: { not: null, lt: now } },
+        ],
+      },
+      select: { id: true, leaderId: true },
+    });
+
+    let bufferStarted = 0;
+    let closed = 0;
+    let errors = 0;
+
+    for (const pool of expiredPools) {
+      try {
+        const result = await this.closePool(pool.id, pool.leaderId);
+        if ((result as any).phase === 'closing') {
+          bufferStarted++;
+        } else {
+          closed++;
+        }
+      } catch (err) {
+        this.logger.error(
+          `[closeExpiredPools] 自动截单失败 group=${pool.id}: ${(err as Error).message}`,
+        );
+        errors++;
+      }
+    }
+
+    if (bufferStarted > 0 || closed > 0 || errors > 0) {
+      this.logger.log(
+        `[closeExpiredPools] buffer=${bufferStarted} closed=${closed} errors=${errors}`,
+      );
+    }
+
+    return { bufferStarted, closed, errors };
+  }
+
+  /**
+   * Initiate refunds for paid orders when a group is cancelled.
+   * Creates RefundRecords (pending approval) and transitions orders to 'refunding'.
+   */
+  private async refundPaidOrdersOnCancel(
+    tx: any,
+    orderIds: string[],
+    reason: string,
+  ) {
+    const paidOrders = await tx.order.findMany({
+      where: { id: { in: orderIds }, status: 'paid' },
+      select: { id: true, totalAmount: true },
+    });
+
+    for (const order of paidOrders) {
+      await tx.refundRecord.create({
+        data: {
+          orderId: order.id,
+          amount: order.totalAmount,
+          reason: `团单取消自动退款: ${reason}`,
+          status: 'pending',
+        },
+      });
+      await tx.order.update({
+        where: { id: order.id },
+        data: { status: 'refunding' },
+      });
+      await tx.orderTimeline.create({
+        data: { orderId: order.id, status: 'refunding' },
+      });
+      await tx.paymentRecord.updateMany({
+        where: { orderId: order.id, status: 'success' },
+        data: { status: 'failed' },
+      });
+    }
+
+    if (paidOrders.length > 0) {
+      this.logger.log(
+        `[refundPaidOrdersOnCancel] 创建 ${paidOrders.length} 条退款申请`,
+      );
+    }
   }
 }

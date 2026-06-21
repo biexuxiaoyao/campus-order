@@ -6,10 +6,12 @@ export type NotifyScenario =
   | 'order_cooking'
   | 'order_ready'
   | 'order_picked'
+  | 'order_cancelled'
   | 'refund_approved'
   | 'group_success'
   | 'group_failed'
-  | 'coupon_expiring';
+  | 'coupon_expiring'
+  | 'urge_reply';
 
 /**
  * 微信订阅消息数据结构

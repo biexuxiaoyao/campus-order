@@ -3,6 +3,7 @@ import { ScheduleService } from './schedule.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotifyService } from '../notify/notify.service';
 import { PaymentService } from '../payment/payment.service';
+import { GroupOrderService } from '../group-order/group-order.service';
 
 const mockNotifyService = {
   sendSubscribeMessage: jest.fn().mockResolvedValue(undefined),
@@ -13,6 +14,11 @@ const mockPaymentService = {
   refund: jest
     .fn()
     .mockResolvedValue({ id: 'mock-refund-id', status: 'completed' }),
+};
+const mockGroupOrderService = {
+  closeExpiredPools: jest
+    .fn()
+    .mockResolvedValue({ bufferStarted: 0, closed: 0, errors: 0 }),
 };
 
 describe('ScheduleService', () => {
@@ -28,6 +34,7 @@ describe('ScheduleService', () => {
         PrismaService,
         { provide: NotifyService, useValue: mockNotifyService },
         { provide: PaymentService, useValue: mockPaymentService },
+        { provide: GroupOrderService, useValue: mockGroupOrderService },
       ],
     }).compile();
     service = module.get<ScheduleService>(ScheduleService);

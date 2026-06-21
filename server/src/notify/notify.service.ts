@@ -17,10 +17,12 @@ const SCENARIO_TEMPLATE_KEYS: Record<NotifyScenario, string> = {
   order_cooking: 'notifyTemplateOrderCooking',
   order_ready: 'notifyTemplateOrderReady',
   order_picked: 'notifyTemplateOrderPicked',
+  order_cancelled: 'notifyTemplateOrderCancelled',
   refund_approved: 'notifyTemplateRefundApproved',
   group_success: 'notifyTemplateGroupSuccess',
   group_failed: 'notifyTemplateGroupFailed',
   coupon_expiring: 'notifyTemplateCouponExpiring',
+  urge_reply: 'notifyTemplateUrgeReply',
 };
 
 @Injectable()
@@ -207,6 +209,71 @@ export class NotifyService {
         phrase3: success ? '拼团成功' : '拼团失败',
       },
     );
+  }
+
+  /** 订单开始制作通知 (PRD #2) */
+  async notifyOrderCooking(
+    userId: string,
+    tenantId: string,
+    order: { orderNo: string; store?: { name?: string } },
+  ): Promise<void> {
+    await this.sendSubscribeMessage(
+      userId,
+      tenantId,
+      'order_cooking',
+      {
+        thing1: order.orderNo,
+        thing2: order.store?.name || '校园订餐',
+        phrase3: '正在制作',
+      },
+      `/pages/order/detail?id=${order.orderNo}`,
+    );
+  }
+
+  /** 取餐完成通知 (PRD #4 — 订单已取餐) */
+  async notifyOrderPicked(
+    userId: string,
+    tenantId: string,
+    order: { orderNo: string; store?: { name?: string } },
+  ): Promise<void> {
+    await this.sendSubscribeMessage(
+      userId,
+      tenantId,
+      'order_picked',
+      {
+        thing1: order.orderNo,
+        thing2: order.store?.name || '校园订餐',
+        phrase3: '已取餐',
+      },
+    );
+  }
+
+  /** 商家取消订单通知 (PRD #7 — 独立模板) */
+  async notifyOrderCancelled(
+    userId: string,
+    tenantId: string,
+    order: { orderNo: string; reason?: string },
+  ): Promise<void> {
+    await this.sendSubscribeMessage(userId, tenantId, 'order_cancelled', {
+      thing1: order.orderNo,
+      thing2: order.reason || '商家取消',
+      phrase3: '已取消',
+    });
+  }
+
+  /** 催单回复通知 (PRD #8) */
+  async notifyUrgeReply(
+    userId: string,
+    tenantId: string,
+    order: { orderNo: string; estimatedMinutes?: number },
+  ): Promise<void> {
+    await this.sendSubscribeMessage(userId, tenantId, 'urge_reply', {
+      thing1: order.orderNo,
+      thing2: order.estimatedMinutes
+        ? `预计还需 ${order.estimatedMinutes} 分钟`
+        : '正在加急处理',
+      phrase3: '商家已回复',
+    });
   }
 
   /** 优惠券即将过期通知（批量） */

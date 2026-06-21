@@ -9,6 +9,7 @@ import {
   Query,
   Headers,
   Req,
+  BadRequestException,
 } from '@nestjs/common';
 import { DishService } from './dish.service';
 import { CreateDishDto } from './dto/create-dish.dto';
@@ -110,17 +111,42 @@ export class DishController {
     return this.dish.removeRelated(relatedId);
   }
 
+  // ========== CSV 导入导出 ==========
+
+  @Post('api/merchant/dishes/import')
+  async importCsv(
+    @Query('storeId') storeId: string,
+    @Body() body: { content: string },
+  ) {
+    if (!storeId) {
+      throw new BadRequestException('缺少门店ID (storeId)');
+    }
+    if (!body.content) {
+      throw new BadRequestException('缺少 CSV 内容');
+    }
+    return this.dish.importCsv(storeId, body.content);
+  }
+
+  @Get('api/merchant/dishes/export')
+  async exportCsv(
+    @Query('storeId') storeId: string,
+  ) {
+    if (!storeId) {
+      throw new BadRequestException('缺少门店ID (storeId)');
+    }
+    return this.dish.exportCsv(storeId);
+  }
+
   // ========== C端（公开接口） ==========
 
   @Public()
   @Get('api/dishes')
   async publicList(@Req() req: any, @Query() query: QueryDishDto) {
     const tenantId = req.tenantId;
-    return this.dish.findPublished(
-      tenantId,
-      query.storeId || 'demo-store-001',
-      query,
-    );
+    if (!query.storeId) {
+      throw new BadRequestException('缺少门店ID (storeId)');
+    }
+    return this.dish.findPublished(tenantId, query.storeId, query);
   }
 
   @Public()

@@ -358,7 +358,18 @@ export class OrderService {
     });
 
     if (updatedOrder) {
-      if (newStatus === 'ready') {
+      if (newStatus === 'cooking') {
+        this.notify
+          .notifyOrderCooking(updatedOrder.userId, updatedOrder.tenantId, {
+            orderNo: updatedOrder.orderNo,
+            store: { name: '校园订餐' },
+          })
+          .catch((err) =>
+            this.logger.error(
+              `[Notify] 开始制作通知发送失败: ${(err as Error).message}`,
+            ),
+          );
+      } else if (newStatus === 'ready') {
         this.notify
           .notifyOrderReady(updatedOrder.userId, updatedOrder.tenantId, {
             orderNo: updatedOrder.orderNo,
@@ -371,18 +382,12 @@ export class OrderService {
             ),
           );
       } else if (newStatus === 'cancelled' && _reason) {
-        // Merchant cancelled with reason — notify user
+        // Merchant cancelled with reason — notify user with dedicated template
         this.notify
-          .sendSubscribeMessage(
-            updatedOrder.userId,
-            updatedOrder.tenantId,
-            'group_failed', // Reuse group_failed template for order cancelled
-            {
-              thing1: updatedOrder.orderNo,
-              thing2: _reason,
-              phrase3: '已取消',
-            },
-          )
+          .notifyOrderCancelled(updatedOrder.userId, updatedOrder.tenantId, {
+            orderNo: updatedOrder.orderNo,
+            reason: _reason,
+          })
           .catch((err) =>
             this.logger.error(
               `[Notify] 订单取消通知发送失败: ${(err as Error).message}`,
@@ -584,6 +589,60 @@ export class OrderService {
     });
   }
 
+  /** Merchant replies to urge — clears urge tag and notifies user */
+  async replyUrge(
+    orderId: string,
+    estimatedMinutes?: number,
+  ) {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      select: {
+        id: true,
+        userId: true,
+        tenantId: true,
+        orderNo: true,
+        tags: true,
+        storeId: true,
+      },
+    });
+
+    if (!order) {
+      throw new NotFoundException('订单不存在');
+    }
+
+    const existingTags: any = (order.tags as any) || {};
+    if (!existingTags.urgeCount || existingTags.urgeCount <= 0) {
+      return { replied: false, message: '该订单没有待回复的催单' };
+    }
+
+    // Clear urge and record reply
+    const updatedTags = {
+      ...existingTags,
+      urgeCount: 0,
+      lastUrgeReplyAt: new Date().toISOString(),
+      estimatedMinutes: estimatedMinutes || null,
+    };
+
+    await this.prisma.order.update({
+      where: { id: orderId },
+      data: { tags: updatedTags },
+    });
+
+    // Fire-and-forget: notify user of urge reply
+    this.notify
+      .notifyUrgeReply(order.userId, order.tenantId, {
+        orderNo: order.orderNo,
+        estimatedMinutes,
+      })
+      .catch((err) =>
+        this.logger.error(
+          `[Notify] 催单回复通知发送失败: ${(err as Error).message}`,
+        ),
+      );
+
+    return { replied: true, orderNo: order.orderNo, estimatedMinutes };
+  }
+
   /** Batch confirm orders (paid → confirmed) with transaction */
   async batchConfirm(storeId: string, orderIds: string[], operatorId: string) {
     const results: any[] = [];
@@ -709,7 +768,7 @@ export class OrderService {
 
     // 1. Execute real refund — uses user's original reason, not admin note
     try {
-      await this.payment.refund(orderId, refund.amount, refund.reason);
+      await this.payment.refund(orderId, refund.amount, refund.reason ?? undefined);
     } catch (err) {
       this.logger.error(
         `[approveRefund] 退款执行失败 order=${orderId}: ${(err as Error).message}`,

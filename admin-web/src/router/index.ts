@@ -87,6 +87,12 @@ const router = createRouter({
           meta: { title: '操作日志', icon: 'List' },
         },
         {
+          path: 'reconciliation',
+          name: 'Reconciliation',
+          component: () => import('@/views/Reconciliation.vue'),
+          meta: { title: '日对账', icon: 'Money' },
+        },
+        {
           path: 'brand',
           name: 'BrandConfig',
           component: () => import('@/views/BrandConfig.vue'),

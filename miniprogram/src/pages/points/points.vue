@@ -1,7 +1,10 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { ref, computed, onMounted } from 'vue';
+import { useAppStore } from '@/stores/app';
 import { getPointsSummary, signIn, getPointsTransactions, exchange } from '@/api/points';
 import type { PointsSummary, PointsTransaction } from '@/api/points';
+
+const appStore = useAppStore();
 
 const summary = ref<PointsSummary>({
   balance: 0,
@@ -14,11 +17,10 @@ const loading = ref(true);
 const signingIn = ref(false);
 const exchangingId = ref<string | null>(null);
 
-// 兑换规则 - 对应后端积分兑换商品
-const exchangeRules = [
-  { id: 'coupon_10_2', label: '满10减2券', points: 100, type: 'coupon' },
-  { id: 'coupon_20_5', label: '满20减5券', points: 200, type: 'coupon' },
-];
+// 兑换规则 - 从品牌配置获取
+const exchangeRules = computed(() =>
+  (appStore.brandConfig?.exchangeRules || []) as { id: string; label: string; points: number; type: string }[],
+);
 
 async function loadSummary() {
   try {
@@ -134,7 +136,7 @@ onMounted(async () => {
     </view>
 
     <!-- 兑换规则 -->
-    <view class="card">
+    <view v-if="exchangeRules.length > 0" class="card">
       <text class="section__title">积分兑换</text>
       <view class="exchange-grid">
         <view

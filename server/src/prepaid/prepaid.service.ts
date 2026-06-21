@@ -1,13 +1,26 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { RechargeDto } from './dto/recharge.dto';
 import { QueryTransactionDto } from './dto/query-transaction.dto';
 import { PaginatedResponse } from '../common/dto/pagination.dto';
 import { Prisma } from '@prisma/client';
+import { WechatPayConfig } from '../payment/wechat-pay.config';
+import { WechatPayClient } from '../payment/wechat-pay.client';
 
 @Injectable()
 export class PrepaidService {
-  constructor(private prisma: PrismaService) {}
+  private readonly logger = new Logger(PrepaidService.name);
+  private readonly baseUrl: string;
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly wechatConfig: WechatPayConfig,
+    private readonly wechatPay: WechatPayClient,
+  ) {
+    this.baseUrl =
+      process.env.API_BASE_URL ||
+      `http://localhost:${process.env.PORT || 3000}`;
+  }
 
   /**
    * 获取或创建个人 + 企业两个充值账户，返回各自的余额
@@ -28,9 +41,19 @@ export class PrepaidService {
    * 充值 — 创建 pending 充值流水 + pending 支付记录，不直接增加余额
    *
    * 余额仅在微信支付回调确认成功后才增加（通过 confirmRecharge）。
+   * 微信已配置时调用真实 JSAPI 下单；未配置时返回 mock 参数供开发调试。
    */
   async recharge(userId: string, tenantId: string, dto: RechargeDto) {
     const amountInFen = dto.amount * 100;
+
+    // Fetch user openid for WeChat JSAPI
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { openid: true },
+    });
+    if (!user?.openid && this.wechatConfig.isConfigured) {
+      throw new BadRequestException('未获取到微信 openid，请重新登录');
+    }
 
     const account = await this._getOrCreateAccount(userId, tenantId, dto.type);
 
@@ -69,17 +92,98 @@ export class PrepaidService {
       };
     });
 
-    // 返回模拟支付参数（后续对接微信支付 JSAPI）
+    // If WeChat is configured, call real JSAPI
+    if (this.wechatConfig.isConfigured) {
+      try {
+        const jsapiParams = await this.createRechargeJsapiOrder(
+          result.paymentRecordId,
+          amountInFen,
+          user!.openid,
+        );
+        return {
+          transactionId: result.transactionId,
+          paymentRecordId: result.paymentRecordId,
+          paymentParams: jsapiParams,
+        };
+      } catch (err) {
+        this.logger.error(
+          `[recharge] 微信 JSAPI 下单失败: ${(err as Error).message}`,
+        );
+        throw new BadRequestException(
+          '充值下单失败，请稍后重试',
+        );
+      }
+    }
+
+    // Mock fallback for dev
     return {
       transactionId: result.transactionId,
       paymentRecordId: result.paymentRecordId,
       paymentParams: {
         timeStamp: String(Math.floor(Date.now() / 1000)),
-        nonceStr: this._randomStr(32),
+        nonceStr: this.wechatPay.generateNonceStr(),
         package: 'prepay_id=mock_prepay_' + result.transactionId,
-        signType: 'MD5',
-        paySign: this._randomStr(32).toUpperCase(),
+        signType: 'RSA',
+        paySign: 'MOCK_SIGN_DEV_ONLY',
       },
+    };
+  }
+
+  /**
+   * Call WeChat JSAPI to create a recharge prepay order.
+   * Returns JSAPI params for wx.requestPayment.
+   */
+  private async createRechargeJsapiOrder(
+    paymentRecordId: string,
+    amountInFen: number,
+    openid: string,
+  ) {
+    const outTradeNo = `RECHARGE_${paymentRecordId}`;
+    const notifyUrl = `${this.baseUrl}/api/payment/notify`;
+
+    const prepayRequest = {
+      appid: this.wechatPay.getAppId(),
+      mchid: this.wechatConfig.mchId,
+      description: '账户充值',
+      out_trade_no: outTradeNo,
+      notify_url: notifyUrl,
+      amount: {
+        total: amountInFen,
+        currency: 'CNY',
+      },
+      payer: {
+        openid,
+      },
+    };
+
+    const prepayResponse = await this.wechatPay.callWechatApi<{ prepay_id: string }>(
+      'POST',
+      '/v3/pay/transactions/jsapi',
+      prepayRequest,
+    );
+
+    const timeStamp = String(Math.floor(Date.now() / 1000));
+    const nonceStr = this.wechatPay.generateNonceStr();
+    const pkg = `prepay_id=${prepayResponse.prepay_id}`;
+
+    const paySign = this.wechatPay.generateWechatSign({
+      appId: this.wechatPay.getAppId(),
+      timeStamp,
+      nonceStr,
+      package: pkg,
+    });
+
+    if (!paySign) {
+      throw new BadRequestException('生成支付签名失败：私钥未配置');
+    }
+
+    return {
+      appId: this.wechatPay.getAppId(),
+      timeStamp,
+      nonceStr,
+      package: pkg,
+      signType: 'RSA',
+      paySign,
     };
   }
 
@@ -388,13 +492,4 @@ export class PrepaidService {
     return account;
   }
 
-  private _randomStr(len: number): string {
-    const chars =
-      'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-    let result = '';
-    for (let i = 0; i < len; i++) {
-      result += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    return result;
-  }
 }

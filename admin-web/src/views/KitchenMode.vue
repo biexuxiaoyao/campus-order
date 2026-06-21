@@ -133,7 +133,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { getOrders, updateOrderStatus } from '@/api/orders'
+import { getKitchenOrders, batchStartCooking, batchMarkReady, batchPickup } from '@/api/orders'
 import { useAppStore } from '@/stores/app'
 import { useAudioAlert } from '@/composables/useAudioAlert'
 
@@ -162,37 +162,17 @@ function formatElapsed(time: string): string {
 }
 
 async function fetchOrders() {
-  const today = new Date().toISOString().slice(0, 10)
   try {
-    const res: any = await getOrders({
-      startDate: today,
-      endDate: today,
-      pageSize: 999,
-      storeId: appStore.currentStoreId || undefined,
-    })
-    const allOrders = res?.list || res?.items || []
+    const storeId = appStore.currentStoreId || ''
+    const res: any = await getKitchenOrders(storeId)
+    const data = res?.data || res || {}
 
-    // Sort urged orders to the top
-    const sortByUrge = (a: any, b: any) => {
-      const urgeA = a.tags?.urgeCount || 0
-      const urgeB = b.tags?.urgeCount || 0
-      if (urgeB !== urgeA) return urgeB - urgeA
-      // Fallback: sort by createdAt ascending (oldest first)
-      return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-    }
-
-    pendingOrders.value = allOrders
-      .filter((o: any) => o.status === 'pending' || o.status === 'confirmed')
-      .sort(sortByUrge)
-    cookingOrders.value = allOrders
-      .filter((o: any) => o.status === 'cooking')
-      .sort(sortByUrge)
-    readyOrders.value = allOrders
-      .filter((o: any) => o.status === 'ready')
-      .sort(sortByUrge)
-    pendingCount.value = pendingOrders.value.length
-    cookingCount.value = cookingOrders.value.length
-    readyCount.value = readyOrders.value.length
+    pendingOrders.value = data.pending || []
+    cookingOrders.value = data.cooking || []
+    readyOrders.value = data.ready || []
+    pendingCount.value = data.pendingCount || 0
+    cookingCount.value = data.cookingCount || 0
+    readyCount.value = data.readyCount || 0
 
     // Play audio alert if new orders appeared
     if (
@@ -204,7 +184,6 @@ async function fetchOrders() {
     prevPendingCount = pendingCount.value
     prevCookingCount = cookingCount.value
   } catch {
-    // Show demo data
     pendingOrders.value = []
     cookingOrders.value = []
     readyOrders.value = []
@@ -216,8 +195,8 @@ async function fetchOrders() {
 
 async function handleStart(order: any) {
   try {
-    // confirmed → cooking
-    await updateOrderStatus(order.id, 'cooking')
+    const storeId = appStore.currentStoreId || ''
+    await batchStartCooking(storeId, [String(order.id)])
     ElMessage.success('开始制作 ' + order.orderNo)
     fetchOrders()
   } catch {
@@ -227,8 +206,8 @@ async function handleStart(order: any) {
 
 async function handleReady(order: any) {
   try {
-    // cooking → ready
-    await updateOrderStatus(order.id, 'ready')
+    const storeId = appStore.currentStoreId || ''
+    await batchMarkReady(storeId, [String(order.id)])
     ElMessage.success('已出餐 ' + order.orderNo)
     fetchOrders()
   } catch {
@@ -238,8 +217,8 @@ async function handleReady(order: any) {
 
 async function handlePickup(order: any) {
   try {
-    // ready → picked
-    await updateOrderStatus(order.id, 'picked')
+    const storeId = appStore.currentStoreId || ''
+    await batchPickup(storeId, [String(order.id)])
     ElMessage.success('已取餐 ' + order.orderNo)
     fetchOrders()
   } catch {

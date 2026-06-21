@@ -44,6 +44,21 @@
         <el-icon><Plus /></el-icon>
         新增菜品
       </el-button>
+      <el-button @click="handleImportCsv">
+        <el-icon><Upload /></el-icon>
+        导入CSV
+      </el-button>
+      <el-button @click="handleExportCsv">
+        <el-icon><Download /></el-icon>
+        导出CSV
+      </el-button>
+      <input
+        ref="fileInputRef"
+        type="file"
+        accept=".csv"
+        style="display: none"
+        @change="onFileSelected"
+      />
     </div>
 
     <!-- Table -->
@@ -191,8 +206,8 @@
 <script setup lang="ts">
 import { reactive, ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Delete } from '@element-plus/icons-vue'
-import { getDishes, createDish, updateDish, deleteDish, getCategories } from '@/api/dishes'
+import { Delete, Upload, Download } from '@element-plus/icons-vue'
+import { getDishes, createDish, updateDish, deleteDish, getCategories, importDishesCsv, exportDishesCsv } from '@/api/dishes'
 import { useAppStore } from '@/stores/app'
 import type { DishData, DishSpec } from '@/api/dishes'
 import type { FormInstance, FormRules } from 'element-plus'
@@ -207,6 +222,7 @@ const isEdit = ref(false)
 const editingId = ref<number | null>(null)
 const submitting = ref(false)
 const formRef = ref<FormInstance>()
+const fileInputRef = ref<HTMLInputElement>()
 
 const query = reactive({
   page: 1,
@@ -341,6 +357,59 @@ async function loadCategories() {
     categories.value = res || []
   } catch {
     categories.value = []
+  }
+}
+
+// CSV import: trigger file picker
+function handleImportCsv() {
+  fileInputRef.value?.click()
+}
+
+// CSV import: read file and send to API
+function onFileSelected(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+  const reader = new FileReader()
+  reader.onload = async (e) => {
+    const content = e.target?.result as string
+    try {
+      const storeId = appStore.currentStoreId || ''
+      const res: any = await importDishesCsv(storeId, content)
+      const data = res?.data || res || {}
+      const created = data.created?.length || 0
+      const errors = data.errors?.length || 0
+      if (errors > 0) {
+        ElMessage.warning(`导入完成: ${created} 成功, ${errors} 失败`)
+      } else {
+        ElMessage.success(`成功导入 ${created} 道菜品`)
+      }
+      loadData()
+    } catch (err: any) {
+      ElMessage.error(err?.message || '导入失败')
+    }
+  }
+  reader.readAsText(file, 'UTF-8')
+  // Reset input so same file can be re-selected
+  input.value = ''
+}
+
+// CSV export
+async function handleExportCsv() {
+  try {
+    const storeId = appStore.currentStoreId || ''
+    const res: any = await exportDishesCsv(storeId)
+    const csv = res?.data || res || ''
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `dishes-${new Date().toISOString().slice(0, 10)}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+    ElMessage.success('导出成功')
+  } catch {
+    ElMessage.error('导出失败')
   }
 }
 

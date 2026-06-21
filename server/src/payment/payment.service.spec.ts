@@ -7,6 +7,7 @@ import { WechatPayConfig } from './wechat-pay.config';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { NotifyService } from '../notify/notify.service';
+import { WechatPayClient } from './wechat-pay.client';
 import { BadRequestException } from '@nestjs/common';
 import { of } from 'rxjs';
 
@@ -44,6 +45,14 @@ describe('PaymentService', () => {
     sendSubscribeMessage: jest.fn().mockResolvedValue(undefined),
   };
 
+  const mockWechatPayClient = {
+    getAppId: jest.fn().mockReturnValue(''),
+    generateNonceStr: jest.fn().mockReturnValue('mocknoncestr'),
+    signMessage: jest.fn().mockReturnValue('mock-sig'),
+    generateWechatSign: jest.fn().mockReturnValue('mock-pay-sign'),
+    callWechatApi: jest.fn().mockResolvedValue({ prepay_id: 'test_prepay_id' }),
+  };
+
   beforeAll(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -55,6 +64,7 @@ describe('PaymentService', () => {
         { provide: WechatPayConfig, useValue: mockWechatConfig },
         { provide: ConfigService, useValue: mockConfigService },
         { provide: NotifyService, useValue: mockNotifyService },
+        { provide: WechatPayClient, useValue: mockWechatPayClient },
       ],
     }).compile();
 

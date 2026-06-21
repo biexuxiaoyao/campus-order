@@ -54,3 +54,13 @@ export function batchStatus(ids: number[], status: string) {
 export function getCategories() {
   return http.get('/dishes/categories')
 }
+
+/** CSV import: upload file content as text */
+export function importDishesCsv(storeId: string, content: string) {
+  return http.post('/merchant/dishes/import', { content }, { params: { storeId } })
+}
+
+/** CSV export: returns CSV text */
+export function exportDishesCsv(storeId: string) {
+  return http.get('/merchant/dishes/export', { params: { storeId } })
+}

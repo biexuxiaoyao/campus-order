@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
 import { useCartStore } from '@/stores/cart';
+import { useAppStore } from '@/stores/app';
 import { createOrder } from '@/api/orders';
 import { prepay } from '@/api/payment';
 
 const cartStore = useCartStore();
+const appStore = useAppStore();
 
 const pickupTime = ref('');
 const remark = ref('');
@@ -16,15 +18,10 @@ const totalPrice = computed(() => {
 });
 
 // 可选取餐时间
-const timeSlots = ref([
-  { label: '尽快取餐', value: '' },
-  { label: '11:30', value: '11:30' },
-  { label: '11:45', value: '11:45' },
-  { label: '12:00', value: '12:00' },
-  { label: '12:15', value: '12:15' },
-  { label: '12:30', value: '12:30' },
-  { label: '12:45', value: '12:45' },
-]);
+const timeSlots = computed(() => {
+  const slots = appStore.brandConfig?.timeSlots || ['尽快取餐'];
+  return slots.map((s: string) => ({ label: s, value: s === '尽快取餐' ? '' : s }));
+});
 
 onMounted(async () => {
   await cartStore.fetchCart();
@@ -58,6 +55,20 @@ async function onSubmit() {
       remark: remark.value || undefined,
       paymentMethod: paymentMethod.value,
     });
+
+    // 请求订阅消息授权（使用品牌配置中已配置的模板ID）
+    const tmplIds = appStore.brandConfig?.subscribeTemplates || [];
+    if (tmplIds.length > 0) {
+      uni.requestSubscribeMessage({
+        tmplIds,
+        success: () => {
+          console.log('[Subscribe] 订阅消息授权成功');
+        },
+        fail: (err: any) => {
+          console.warn('[Subscribe] 订阅消息授权失败（可忽略）', err);
+        },
+      });
+    }
 
     // 调用支付预下单（微信/余额统一走 prepay）
     try {

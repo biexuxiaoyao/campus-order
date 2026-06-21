@@ -34,3 +34,31 @@ export function approveRefund(id: number, data: RefundApproval) {
 export function batchConfirm(storeId: string | null, orderIds: (string | number)[]) {
   return http.post('/merchant/orders/batch-confirm', { storeId, orderIds: orderIds.map(String) })
 }
+
+// ========== Kitchen endpoints ==========
+
+export function getKitchenOrders(storeId: string) {
+  return http.get('/merchant/kitchen/orders', { params: { storeId } })
+}
+
+export function batchStartCooking(storeId: string, orderIds: string[]) {
+  return http.post('/merchant/kitchen/batch-start', { storeId, orderIds })
+}
+
+export function batchMarkReady(storeId: string, orderIds: string[]) {
+  return http.post('/merchant/kitchen/batch-ready', { storeId, orderIds })
+}
+
+export function batchPickup(storeId: string, orderIds: string[]) {
+  return http.post('/merchant/kitchen/batch-pickup', { storeId, orderIds })
+}
+
+// ========== Dashboard & Reconciliation ==========
+
+export function getDashboard(storeId: string) {
+  return http.get('/merchant/dashboard', { params: { storeId } })
+}
+
+export function getReconciliation(storeId: string, date: string) {
+  return http.get('/merchant/reconciliation', { params: { storeId, date } })
+}

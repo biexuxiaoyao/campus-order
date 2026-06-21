@@ -3,6 +3,7 @@ import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotifyService } from '../notify/notify.service';
 import { PaymentService } from '../payment/payment.service';
+import { GroupOrderService } from '../group-order/group-order.service';
 
 @Injectable()
 export class ScheduleService {
@@ -12,6 +13,7 @@ export class ScheduleService {
     private readonly prisma: PrismaService,
     private readonly notify: NotifyService,
     private readonly payment: PaymentService,
+    private readonly groupOrder: GroupOrderService,
   ) {}
 
   /**
@@ -189,6 +191,26 @@ export class ScheduleService {
   }
 
   /**
+   * Every 1 minute: Auto-close group orders past deadline or with expired 30s buffer.
+   */
+  @Cron('*/1 * * * *')
+  async handleGroupOrderAutoClose(): Promise<void> {
+    this.logger.log('[handleGroupOrderAutoClose] Starting group order auto-close...');
+    try {
+      const result = await this.groupOrder.closeExpiredPools();
+      if (result.bufferStarted > 0 || result.closed > 0) {
+        this.logger.log(
+          `[handleGroupOrderAutoClose] Completed. buffer=${result.bufferStarted} closed=${result.closed} errors=${result.errors}`,
+        );
+      }
+    } catch (err) {
+      this.logger.error(
+        `[handleGroupOrderAutoClose] Fatal error: ${(err as Error).message}`,
+      );
+    }
+  }
+
+  /**
    * Every 1 minute: Query pending orders from last 5 minutes for payment callback compensation.
    * Actively queries WeChat order status to recover missed payment notifications.
    */
@@ -312,7 +334,6 @@ export class ScheduleService {
         data: {
           status: 'success',
           transactionId: wechatResult.transactionId ?? null,
-          paidAt: new Date(),
         },
       });
 
