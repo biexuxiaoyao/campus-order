@@ -1,11 +1,17 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { WechatPayConfig } from '../payment/wechat-pay.config';
+import { WechatPayClient } from '../payment/wechat-pay.client';
 
 @Injectable()
 export class ReconciliationService {
   private readonly logger = new Logger(ReconciliationService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly wechatConfig: WechatPayConfig,
+    private readonly wechatPay: WechatPayClient,
+  ) {}
 
   /**
    * Merchant dashboard — today's key metrics.
@@ -176,6 +182,23 @@ export class ReconciliationService {
 
     const difference = systemTotal - wechatTotal;
 
+    // Attempt to fetch real WeChat bill for comparison (when configured)
+    let wechatBillTotal: number | null = null;
+    let billSource = 'local';
+    if (this.wechatConfig.isConfigured) {
+      try {
+        wechatBillTotal = await this.fetchWechatBillTotal(date);
+        billSource = 'wechat_api';
+        this.logger.log(
+          `[Reconciliation] 微信对账单获取成功 date=${date} total=${wechatBillTotal}`,
+        );
+      } catch (err) {
+        this.logger.warn(
+          `[Reconciliation] 微信对账单获取失败，回退到本地比对: ${(err as Error).message}`,
+        );
+      }
+    }
+
     // Detail breakdown: per-order payment records
     const details = await this.prisma.paymentRecord.findMany({
       where: {
@@ -199,9 +222,10 @@ export class ReconciliationService {
     return {
       date,
       systemTotal,
-      wechatTotal,
-      difference,
-      matched: difference === 0,
+      wechatTotal: wechatBillTotal ?? wechatTotal,
+      difference: wechatBillTotal != null ? systemTotal - wechatBillTotal : difference,
+      matched: wechatBillTotal != null ? systemTotal === wechatBillTotal : difference === 0,
+      billSource,
       detailCount: details.length,
       details: details.map((d) => ({
         paymentId: d.id,
@@ -211,5 +235,117 @@ export class ReconciliationService {
         time: d.createdAt,
       })),
     };
+  }
+
+  /**
+   * Fetch real WeChat bill total for a given date.
+   * Calls /v3/bill/tradebill to get the download URL, then fetches and parses the CSV.
+   */
+  private async fetchWechatBillTotal(date: string): Promise<number> {
+    // Step 1: Request bill download URL from WeChat
+    const billResponse = await this.wechatPay.callWechatApi<{
+      download_url: string;
+      hash_type: string;
+      hash_value: string;
+    }>('GET', `/v3/bill/tradebill?bill_date=${date.replace(/-/g, '')}`, null);
+
+    if (!billResponse?.download_url) {
+      throw new Error('微信未返回对账单下载链接');
+    }
+
+    // Step 2: Download the bill CSV
+    const csvContent = await this.downloadBillCsv(billResponse.download_url);
+
+    // Step 3: Parse CSV and sum successful payments
+    return this.parseWechatBillTotal(csvContent);
+  }
+
+  /** Download bill CSV from WeChat-provided URL */
+  private async downloadBillCsv(url: string): Promise<string> {
+    // Use the same HTTP infrastructure as WechatPayClient via a simple fetch
+    const https = await import('https');
+    return new Promise((resolve, reject) => {
+      https
+        .get(url, (res: any) => {
+          let data = '';
+          res.on('data', (chunk: string) => (data += chunk));
+          res.on('end', () => resolve(data));
+          res.on('error', reject);
+        })
+        .on('error', reject);
+    });
+  }
+
+  /**
+   * Parse WeChat bill CSV to extract total successful payment amount.
+   * WeChat bill format: header row + detail rows with columns:
+   * trade_time, appid, mchid, sub_mchid, device_info, transaction_id,
+   * out_trade_no, openid, trade_type, trade_state, bank_type, fee_type,
+   * total_fee, coupon_fee, refund_fee, ...
+   * Total row starts with `总交易单数`.
+   */
+  private parseWechatBillTotal(csv: string): number {
+    const lines = csv.split('\n').filter((l) => l.trim());
+    let total = 0;
+
+    for (const line of lines) {
+      if (line.startsWith('总交易单数') || line.startsWith('合计')) {
+        // Parse the summary row: columns include total fee
+        const cols = line.split(',');
+        // Total fee is typically the 13th column (index 12) in the summary row
+        const feeCol = cols.find((c) => /^\d+\.?\d*$/.test(c.trim()));
+        if (feeCol) {
+          // WeChat returns amounts in yuan with decimals; convert to fen
+          const yuan = parseFloat(feeCol.trim());
+          if (!isNaN(yuan)) {
+            return Math.round(yuan * 100);
+          }
+        }
+      } else if (
+        line.startsWith('`') ||
+        line.startsWith('交易时间') ||
+        line.trim() === ''
+      ) {
+        // Skip header and empty lines
+        continue;
+      } else {
+        // Detail row: sum successful payments (trade_state = SUCCESS)
+        const cols = this.parseCsvLineRaw(line);
+        const tradeState = cols[9]?.trim();
+        const totalFee = parseFloat(cols[12]?.trim() || '0');
+        if (
+          (tradeState === 'SUCCESS' || tradeState === 'REFUND') &&
+          !isNaN(totalFee)
+        ) {
+          // SUCCESS = positive (payment), REFUND = negative (refund)
+          total += tradeState === 'SUCCESS' ? totalFee : -totalFee;
+        }
+      }
+    }
+
+    return Math.round(total * 100); // Convert yuan to fen
+  }
+
+  /** Parse a single CSV line into columns (handles quoted fields with commas) */
+  private parseCsvLineRaw(line: string): string[] {
+    const result: string[] = [];
+    let current = '';
+    let inQuotes = false;
+    // Remove leading backtick if present (WeChat CSV format)
+    const clean = line.startsWith('`') ? line.slice(1) : line;
+
+    for (let i = 0; i < clean.length; i++) {
+      const ch = clean[i];
+      if (ch === '"') {
+        inQuotes = !inQuotes;
+      } else if (ch === ',' && !inQuotes) {
+        result.push(current.trim());
+        current = '';
+      } else {
+        current += ch;
+      }
+    }
+    result.push(current.trim());
+    return result;
   }
 }

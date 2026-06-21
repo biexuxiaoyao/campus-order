@@ -1,6 +1,24 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ReconciliationService } from './reconciliation.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { WechatPayConfig } from '../payment/wechat-pay.config';
+import { WechatPayClient } from '../payment/wechat-pay.client';
+
+const mockWechatConfig = {
+  isConfigured: false,
+  mchId: '',
+  apiV3Key: '',
+  serialNo: '',
+  privateKey: null,
+  platformCert: null,
+};
+const mockWechatPayClient = {
+  getAppId: jest.fn().mockReturnValue(''),
+  generateNonceStr: jest.fn().mockReturnValue(''),
+  signMessage: jest.fn().mockReturnValue(''),
+  generateWechatSign: jest.fn().mockReturnValue(''),
+  callWechatApi: jest.fn().mockResolvedValue(null),
+};
 
 describe('ReconciliationService', () => {
   let service: ReconciliationService;
@@ -14,7 +32,12 @@ describe('ReconciliationService', () => {
 
   beforeAll(async () => {
     const module: TestingModule = await Test.createTestingModule({
-      providers: [ReconciliationService, PrismaService],
+      providers: [
+        ReconciliationService,
+        PrismaService,
+        { provide: WechatPayConfig, useValue: mockWechatConfig },
+        { provide: WechatPayClient, useValue: mockWechatPayClient },
+      ],
     }).compile();
 
     service = module.get<ReconciliationService>(ReconciliationService);

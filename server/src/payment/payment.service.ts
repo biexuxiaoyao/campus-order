@@ -613,8 +613,12 @@ export class PaymentService {
     nonce: string,
   ): boolean {
     if (!this.wechatConfig.platformCert) {
-      this.logger.warn('平台证书未配置，签名验证返回 true（开发模式）');
-      return true;
+      if (!this.wechatConfig.isConfigured) {
+        this.logger.warn('平台证书未配置，签名验证返回 true（开发模式）');
+        return true;
+      }
+      this.logger.error('平台证书未配置但微信支付已启用，拒绝回调');
+      return false;
     }
 
     const signedString = `${timestamp}\n${nonce}\n${body}\n`;
